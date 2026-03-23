@@ -401,10 +401,12 @@ async def delete_blueprint(
 
 @api_router.post("/premium/activate")
 async def activate_premium(
-    code: str,
+    request: dict,
     current_user: dict = Depends(get_current_user)
 ):
     """Activate premium features with a code (bypass for testing)"""
+    code = request.get("code", "")
+    
     # Simple bypass code for testing
     if code == "CAD_PREMIUM_2025":
         await users_collection.update_one(

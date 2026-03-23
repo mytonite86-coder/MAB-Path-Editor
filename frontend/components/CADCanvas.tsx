@@ -33,59 +33,60 @@ export default function CADCanvas({
   const [currentPoints, setCurrentPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        if (activeTool === 'select') return;
+  const handleTouchStart = (evt: any) => {
+    if (activeTool === 'select') return;
+    
+    const { locationX, locationY } = evt.nativeEvent;
+    setIsDrawing(true);
+    setCurrentPoints([[locationX, locationY]]);
+  };
 
-        const { locationX, locationY } = evt.nativeEvent;
-        setIsDrawing(true);
-        setCurrentPoints([[locationX, locationY]]);
-      },
-      onPanResponderMove: (evt) => {
-        if (!isDrawing || activeTool === 'select') return;
+  const handleTouchMove = (evt: any) => {
+    if (!isDrawing || activeTool === 'select') return;
+    
+    const { locationX, locationY } = evt.nativeEvent;
+    
+    if (activeTool === 'line' || activeTool === 'rectangle' || activeTool === 'circle') {
+      setCurrentPoints([[currentPoints[0][0], currentPoints[0][1]], [locationX, locationY]]);
+    }
+  };
 
-        const { locationX, locationY } = evt.nativeEvent;
+  const handleTouchEnd = () => {
+    if (!isDrawing || activeTool === 'select') return;
+    
+    if (currentPoints.length >= 1) {
+      // If only one point, create a default second point
+      const points = currentPoints.length >= 2 
+        ? currentPoints 
+        : [[currentPoints[0][0], currentPoints[0][1]], [currentPoints[0][0] + 50, currentPoints[0][1] + 50]];
+      
+      const newElement: CADElement = {
+        id: `elem_${Date.now()}`,
+        type: activeTool,
+        points: points,
+        properties: {
+          color: activeColor,
+          strokeWidth: activeStrokeWidth,
+          layer: 'default',
+        },
+      };
 
-        if (activeTool === 'line' || activeTool === 'rectangle' || activeTool === 'circle') {
-          setCurrentPoints([[currentPoints[0][0], currentPoints[0][1]], [locationX, locationY]]);
-        }
-      },
-      onPanResponderRelease: () => {
-        if (!isDrawing || activeTool === 'select') return;
+      if (activeTool === 'circle' && points.length >= 2) {
+        const [x1, y1] = points[0];
+        const [x2, y2] = points[1];
+        const radius = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        newElement.properties.radius = radius;
+        newElement.points = [[x1, y1]];
+      }
 
-        if (currentPoints.length >= 2 || (activeTool === 'line' && currentPoints.length >= 1)) {
-          const newElement: CADElement = {
-            id: `elem_${Date.now()}`,
-            type: activeTool,
-            points: currentPoints.length >= 2 ? currentPoints : [[currentPoints[0][0], currentPoints[0][1]], [currentPoints[0][0] + 50, currentPoints[0][1] + 50]],
-            properties: {
-              color: activeColor,
-              strokeWidth: activeStrokeWidth,
-              layer: 'default',
-            },
-          };
+      if (onElementsChange) {
+        onElementsChange([...elements, newElement]);
+      }
+    }
 
-          if (activeTool === 'circle' && currentPoints.length >= 2) {
-            const [x1, y1] = currentPoints[0];
-            const [x2, y2] = currentPoints[1];
-            const radius = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-            newElement.properties.radius = radius;
-            newElement.points = [[x1, y1]];
-          }
-
-          if (onElementsChange) {
-            onElementsChange([...elements, newElement]);
-          }
-        }
-
-        setIsDrawing(false);
-        setCurrentPoints([]);
-      },
-    })
-  ).current;
+    setIsDrawing(false);
+    setCurrentPoints([]);
+  };
 
   const renderElement = (element: CADElement, index: number) => {
     const { type, points, properties } = element;
@@ -241,7 +242,14 @@ export default function CADCanvas({
   };
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <View 
+      style={styles.container}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={handleTouchStart}
+      onResponderMove={handleTouchMove}
+      onResponderRelease={handleTouchEnd}
+    >
       <Svg 
         width={CANVAS_WIDTH} 
         height={CANVAS_HEIGHT} 
