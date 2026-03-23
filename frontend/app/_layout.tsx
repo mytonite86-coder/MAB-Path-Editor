@@ -12,6 +12,7 @@ export default function RootLayout() {
         <Stack.Screen name="canvas" />
         <Stack.Screen name="gallery" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="viewer3d" />
       </Stack>
     </AuthProvider>
   );

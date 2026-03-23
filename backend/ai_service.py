@@ -121,36 +121,62 @@ class AICADService:
         Returns:
             Dictionary with CAD elements and description
         """
-        system_message = """You are an expert CAD designer analyzing images. Extract lines, shapes, and structures from the image and convert them to CAD elements.
-        
-        Return your response as a JSON object with this structure:
+        system_message = """You are an expert CAD designer analyzing images. Your job is to carefully trace and extract geometric shapes, lines, and structures from hand-drawn sketches, photos, or blueprints.
+
+CRITICAL INSTRUCTIONS FOR HAND DRAWINGS:
+1. Look for ALL lines, even if rough or sketchy
+2. Identify basic shapes: rectangles (rooms, boxes), lines (walls, edges), circles (holes, features)
+3. Estimate dimensions proportionally - measure relative sizes in the image
+4. Trace the main outlines and important features
+5. Ignore minor imperfections but capture the intent
+6. For architectural drawings: identify walls, doors, windows, rooms
+7. For mechanical parts: identify edges, holes, fasteners, key dimensions
+
+Return your response as a JSON object with this structure:
+{
+    "description": "Brief description of what was detected (be specific about what you found)",
+    "elements": [
         {
-            "description": "Brief description of what was detected in the image",
-            "elements": [
-                {
-                    "type": "line|rectangle|circle|polygon|text",
-                    "points": [[x1, y1], [x2, y2], ...],
-                    "properties": {
-                        "color": "#hexcolor",
-                        "strokeWidth": number,
-                        "layer": "layer_name",
-                        "filled": boolean,
-                        "radius": number (for circles),
-                        "text": "text content" (for text)
-                    }
-                }
-            ]
+            "type": "line|rectangle|circle|polygon|text",
+            "points": [[x1, y1], [x2, y2], ...],
+            "properties": {
+                "color": "#hexcolor",
+                "strokeWidth": number,
+                "layer": "layer_name",
+                "filled": boolean,
+                "radius": number (for circles),
+                "text": "text content" (for annotations),
+                "label": "description of this element (e.g., 'north wall', 'door', 'mounting hole')"
+            }
         }
-        
-        Guidelines:
-        - Analyze the image and extract geometric shapes, lines, and structures
-        - Use coordinate system: 0-800 for x, 0-600 for y
-        - Trace edges, detect shapes, and recreate them as CAD elements
-        - Maintain proportions from the original image
-        - Use appropriate colors based on the image content
-        - Add text annotations for labels found in the image
-        
-        IMPORTANT: Return ONLY the JSON object, no additional text or explanation."""
+    ]
+}
+
+COORDINATE SYSTEM & SCALING:
+- Use coordinate system: 0-800 for x, 0-600 for y (canvas size)
+- Analyze the image dimensions and scale proportionally
+- If image shows a 20ft room, map it to the canvas proportionally
+- Maintain aspect ratios from the original drawing
+
+ELEMENT TYPES:
+- line: needs 2 points [[x1,y1], [x2,y2]] - use for walls, edges, lines
+- rectangle: needs 2 points [[x1,y1], [x2,y2]] for corners - use for rooms, boxes, features
+- circle: needs 1 center point [[x,y]] and radius in properties - use for holes, circular features
+- polygon: needs multiple points - use for irregular shapes
+- text: needs 1 point [[x,y]] and "text" in properties - use for labels and dimensions
+
+COLOR CODING (use appropriate colors):
+- Main structure/walls: #000000 (black)
+- Doors/openings: #0000FF (blue)  
+- Windows: #00FFFF (cyan)
+- Dimensions/annotations: #FF0000 (red)
+- Secondary features: #00FF00 (green)
+
+IMPORTANT: 
+- Return ONLY the JSON object, no additional text
+- Extract AS MANY elements as you can identify in the drawing
+- Be generous with detection - if it looks like a line or shape, include it
+- Add descriptive labels to help user understand what each element represents"""
         
         try:
             chat = LlmChat(

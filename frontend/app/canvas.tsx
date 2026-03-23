@@ -367,6 +367,23 @@ export default function Canvas() {
         </View>
 
         <View style={styles.actions}>
+          <TouchableOpacity 
+            style={styles.view3DButton} 
+            onPress={() => {
+              if (elements.length === 0) {
+                Alert.alert('No Elements', 'Please draw or generate some elements first');
+                return;
+              }
+              router.push({
+                pathname: '/viewer3d',
+                params: { elementsData: JSON.stringify(elements) }
+              });
+            }}
+          >
+            <Ionicons name="cube" size={20} color="#fff" />
+            <Text style={styles.view3DButtonText}>View in 3D</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
             <Ionicons name="save" size={20} color="#fff" />
             <Text style={styles.saveButtonText}>Save Blueprint</Text>
@@ -644,6 +661,21 @@ const styles = StyleSheet.create({
   actions: {
     marginTop: 24,
     marginBottom: 32,
+    gap: 12,
+  },
+  view3DButton: {
+    backgroundColor: '#34C759',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  view3DButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   saveButton: {
     backgroundColor: '#007AFF',
