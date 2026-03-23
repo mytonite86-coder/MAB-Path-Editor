@@ -19,6 +19,7 @@ interface CADCanvasProps {
   activeTool?: string;
   activeColor?: string;
   activeStrokeWidth?: number;
+  backgroundColor?: 'dark' | 'light';
 }
 
 export default function CADCanvas({
@@ -27,6 +28,7 @@ export default function CADCanvas({
   activeTool = 'select',
   activeColor = '#000000',
   activeStrokeWidth = 2,
+  backgroundColor = 'dark',
 }: CADCanvasProps) {
   const [currentPoints, setCurrentPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -242,7 +244,14 @@ export default function CADCanvas({
 
   return (
     <View style={styles.container} {...panResponder.panHandlers}>
-      <Svg width={CANVAS_WIDTH} height={CANVAS_HEIGHT} style={styles.canvas}>
+      <Svg 
+        width={CANVAS_WIDTH} 
+        height={CANVAS_HEIGHT} 
+        style={[
+          styles.canvas,
+          backgroundColor === 'light' && styles.canvasLight
+        ]}
+      >
         {/* Grid background */}
         <G opacity={0.1}>
           {Array.from({ length: 20 }).map((_, i) => (
@@ -252,7 +261,7 @@ export default function CADCanvas({
               y1={0}
               x2={(i * CANVAS_WIDTH) / 20}
               y2={CANVAS_HEIGHT}
-              stroke="#ffffff"
+              stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
               strokeWidth={1}
             />
           ))}
@@ -263,7 +272,7 @@ export default function CADCanvas({
               y1={(i * CANVAS_HEIGHT) / 15}
               x2={CANVAS_WIDTH}
               y2={(i * CANVAS_HEIGHT) / 15}
-              stroke="#ffffff"
+              stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
               strokeWidth={1}
             />
           ))}
@@ -297,6 +306,9 @@ const styles = StyleSheet.create({
   },
   canvas: {
     backgroundColor: '#0a0a0a',
+  },
+  canvasLight: {
+    backgroundColor: '#ffffff',
   },
   emptyState: {
     position: 'absolute',

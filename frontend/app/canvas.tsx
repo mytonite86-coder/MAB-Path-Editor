@@ -37,6 +37,7 @@ export default function Canvas() {
   const [activeTool, setActiveTool] = useState('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [activeStrokeWidth, setActiveStrokeWidth] = useState(2);
+  const [canvasBackground, setCanvasBackground] = useState<'dark' | 'light'>('dark');
   
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiMode, setAiMode] = useState<'text' | 'image' | null>(null);
@@ -263,6 +264,7 @@ export default function Canvas() {
           activeTool={activeTool}
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
+          backgroundColor={canvasBackground}
         />
 
         <Text style={styles.sectionTitle}>Drawing Tools</Text>
@@ -286,6 +288,58 @@ export default function Canvas() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        <View style={styles.colorSection}>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>Line Color</Text>
+            <TouchableOpacity
+              style={styles.backgroundToggle}
+              onPress={() => setCanvasBackground(canvasBackground === 'dark' ? 'light' : 'dark')}
+            >
+              <Ionicons
+                name={canvasBackground === 'dark' ? 'moon' : 'sunny'}
+                size={20}
+                color="#fff"
+              />
+              <Text style={styles.backgroundToggleText}>
+                {canvasBackground === 'dark' ? 'Dark' : 'Light'} Canvas
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorScroll}>
+            {[
+              { color: '#000000', label: 'Black' },
+              { color: '#FFFFFF', label: 'White' },
+              { color: '#FF0000', label: 'Red' },
+              { color: '#00FF00', label: 'Green' },
+              { color: '#0000FF', label: 'Blue' },
+              { color: '#FFFF00', label: 'Yellow' },
+              { color: '#FF00FF', label: 'Magenta' },
+              { color: '#00FFFF', label: 'Cyan' },
+              { color: '#FFA500', label: 'Orange' },
+              { color: '#800080', label: 'Purple' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.color}
+                style={[
+                  styles.colorButton,
+                  activeColor === item.color && styles.colorButtonActive,
+                ]}
+                onPress={() => setActiveColor(item.color)}
+              >
+                <View
+                  style={[
+                    styles.colorSwatch,
+                    { backgroundColor: item.color },
+                    item.color === '#FFFFFF' && { borderWidth: 1, borderColor: '#666' },
+                  ]}
+                />
+                <Text style={styles.colorLabel}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
         <Text style={styles.sectionTitle}>AI Generation</Text>
         <View style={styles.aiButtons}>
@@ -515,6 +569,58 @@ const styles = StyleSheet.create({
   toolLabelActive: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  colorSection: {
+    marginTop: 8,
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  backgroundToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  backgroundToggleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  colorScroll: {
+    marginBottom: 8,
+  },
+  colorButton: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    alignItems: 'center',
+    minWidth: 70,
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  colorButtonActive: {
+    borderColor: '#007AFF',
+    backgroundColor: '#1a2a3a',
+  },
+  colorSwatch: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginBottom: 6,
+  },
+  colorLabel: {
+    color: '#fff',
+    fontSize: 11,
   },
   aiButtons: {
     flexDirection: 'row',
