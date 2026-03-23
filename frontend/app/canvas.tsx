@@ -38,6 +38,7 @@ export default function Canvas() {
   const [activeColor, setActiveColor] = useState('#000000');
   const [activeStrokeWidth, setActiveStrokeWidth] = useState(2);
   const [canvasBackground, setCanvasBackground] = useState<'dark' | 'light'>('dark');
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiMode, setAiMode] = useState<'text' | 'image' | null>(null);
@@ -216,7 +217,28 @@ export default function Canvas() {
     }
   };
 
-  const handleClear = () => {
+  const handleDelete = () => {
+    if (!selectedElementId) {
+      Alert.alert('No Selection', 'Please select an element first');
+      return;
+    }
+    
+    Alert.alert(
+      'Delete Element',
+      'Are you sure you want to delete this element?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setElements(elements.filter(el => el.id !== selectedElementId));
+            setSelectedElementId(null);
+          },
+        },
+      ]
+    );
+  };
     Alert.alert(
       'Clear Canvas',
       'Are you sure you want to clear all elements?',
@@ -248,6 +270,11 @@ export default function Canvas() {
         </TouchableOpacity>
         <Text style={styles.title}>CAD Canvas</Text>
         <View style={styles.headerButtons}>
+          {selectedElementId && (
+            <TouchableOpacity onPress={handleDelete} style={styles.headerButton}>
+              <Ionicons name="trash" size={24} color="#FF3B30" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={handleUndo} style={styles.headerButton}>
             <Ionicons name="arrow-undo" size={24} color="#fff" />
           </TouchableOpacity>
@@ -265,6 +292,8 @@ export default function Canvas() {
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
           backgroundColor={canvasBackground}
+          selectedElementId={selectedElementId}
+          onElementSelect={setSelectedElementId}
         />
 
         <Text style={styles.sectionTitle}>Drawing Tools</Text>

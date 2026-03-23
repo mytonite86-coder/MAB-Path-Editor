@@ -35,10 +35,13 @@ export default function Viewer3D() {
     if (elementsData) {
       try {
         const parsed = JSON.parse(elementsData as string);
+        console.log('3D Viewer - Parsed elements:', parsed);
+        console.log('3D Viewer - Element count:', parsed.length);
         setElements(parsed);
         calculateEngineering(parsed, 10, 'steel');
       } catch (error) {
         console.error('Error parsing elements:', error);
+        Alert.alert('Error', 'Failed to load elements for 3D view');
       }
     }
   }, [elementsData]);
@@ -166,7 +169,10 @@ export default function Viewer3D() {
       shininess: 30,
     });
 
-    elements.forEach((element) => {
+    console.log('3D Viewer - Creating 3D models for', elements.length, 'elements');
+
+    elements.forEach((element, index) => {
+      console.log(`3D Viewer - Processing element ${index}:`, element.type, element.points);
       try {
         if (element.type === 'rectangle' && element.points.length >= 2) {
           const width = Math.abs(element.points[1][0] - element.points[0][0]);
