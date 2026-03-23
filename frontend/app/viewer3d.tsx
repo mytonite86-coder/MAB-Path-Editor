@@ -126,9 +126,8 @@ export default function Viewer3D() {
     scene.background = new THREE.Color(0x1a1a1a);
 
     // Create camera
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.z = 300;
-    camera.position.y = -150;
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
+    camera.position.set(0, 250, 400);
     camera.lookAt(0, 0, 0);
 
     // Add lights
@@ -141,7 +140,12 @@ export default function Viewer3D() {
 
     // Add grid
     const gridHelper = new THREE.GridHelper(500, 20, 0x444444, 0x222222);
+    gridHelper.position.y = -depth / 2 - 20;
     scene.add(gridHelper);
+
+    // Add axis helper
+    const axesHelper = new THREE.AxesHelper(200);
+    scene.add(axesHelper);
 
     // Get material properties
     const materials: any = {
@@ -166,29 +170,29 @@ export default function Viewer3D() {
           const width = Math.abs(element.points[1][0] - element.points[0][0]);
           const height = Math.abs(element.points[1][1] - element.points[0][1]);
           const centerX = (element.points[0][0] + element.points[1][0]) / 2 - 400;
-          const centerY = -(element.points[0][1] + element.points[1][1]) / 2 + 300;
+          const centerZ = -((element.points[0][1] + element.points[1][1]) / 2 - 300);
 
-          const geometry = new THREE.BoxGeometry(width, height, depth);
+          const geometry = new THREE.BoxGeometry(width, depth, height);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
-          mesh.position.set(centerX, centerY, 0);
+          mesh.position.set(centerX, 0, centerZ);
           scene.add(mesh);
 
           // Add edges
           const edges = new THREE.EdgesGeometry(geometry);
           const line = new THREE.LineSegments(
             edges,
-            new THREE.LineBasicMaterial({ color: 0x000000 })
+            new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
           );
-          line.position.set(centerX, centerY, 0);
+          line.position.set(centerX, 0, centerZ);
           scene.add(line);
         } else if (element.type === 'circle' && element.properties.radius) {
           const radius = element.properties.radius;
           const centerX = element.points[0][0] - 400;
-          const centerY = -element.points[0][1] + 300;
+          const centerZ = -(element.points[0][1] - 300);
 
           const geometry = new THREE.CylinderGeometry(radius, radius, depth, 32);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
-          mesh.position.set(centerX, centerY, 0);
+          mesh.position.set(centerX, 0, centerZ);
           mesh.rotation.x = Math.PI / 2;
           scene.add(mesh);
 
@@ -196,26 +200,36 @@ export default function Viewer3D() {
           const edges = new THREE.EdgesGeometry(geometry);
           const line = new THREE.LineSegments(
             edges,
-            new THREE.LineBasicMaterial({ color: 0x000000 })
+            new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
           );
-          line.position.set(centerX, centerY, 0);
+          line.position.set(centerX, 0, centerZ);
           line.rotation.x = Math.PI / 2;
           scene.add(line);
         } else if (element.type === 'line' && element.points.length >= 2) {
           // Create a thin box for lines
           const x1 = element.points[0][0] - 400;
-          const y1 = -element.points[0][1] + 300;
+          const z1 = -(element.points[0][1] - 300);
           const x2 = element.points[1][0] - 400;
-          const y2 = -element.points[1][1] + 300;
+          const z2 = -(element.points[1][1] - 300);
 
-          const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-          const angle = Math.atan2(y2 - y1, x2 - x1);
+          const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
+          const angle = Math.atan2(z2 - z1, x2 - x1);
 
-          const geometry = new THREE.BoxGeometry(length, 2, depth);
+          const geometry = new THREE.BoxGeometry(length, depth, 3);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
-          mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, 0);
-          mesh.rotation.z = angle;
+          mesh.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
+          mesh.rotation.y = -angle;
           scene.add(mesh);
+
+          // Add edge highlight
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color: 0xffffff })
+          );
+          line.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
+          line.rotation.y = -angle;
+          scene.add(line);
         }
       } catch (error) {
         console.error('Error creating 3D element:', error);
@@ -223,13 +237,13 @@ export default function Viewer3D() {
     });
 
     // Animation loop
-    let rotation = 0;
+    let rotationY = 0;
     const render = () => {
       requestAnimationFrame(render);
 
-      // Rotate scene
-      rotation += 0.005;
-      scene.rotation.y = rotation;
+      // Rotate scene around Y axis (vertical rotation)
+      rotationY += 0.01;
+      scene.rotation.y = rotationY;
 
       renderer.render(scene, camera);
       gl.endFrameEXP();

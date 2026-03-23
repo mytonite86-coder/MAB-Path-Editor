@@ -35,8 +35,8 @@ export default function CADCanvas({
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => activeTool !== 'select',
-      onMoveShouldSetPanResponder: () => activeTool !== 'select',
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         if (activeTool === 'select') return;
 
@@ -49,20 +49,18 @@ export default function CADCanvas({
 
         const { locationX, locationY } = evt.nativeEvent;
 
-        if (activeTool === 'line' || activeTool === 'rectangle') {
+        if (activeTool === 'line' || activeTool === 'rectangle' || activeTool === 'circle') {
           setCurrentPoints([[currentPoints[0][0], currentPoints[0][1]], [locationX, locationY]]);
-        } else if (activeTool === 'polygon') {
-          setCurrentPoints([...currentPoints, [locationX, locationY]]);
         }
       },
       onPanResponderRelease: () => {
         if (!isDrawing || activeTool === 'select') return;
 
-        if (currentPoints.length >= 2) {
+        if (currentPoints.length >= 2 || (activeTool === 'line' && currentPoints.length >= 1)) {
           const newElement: CADElement = {
             id: `elem_${Date.now()}`,
             type: activeTool,
-            points: currentPoints,
+            points: currentPoints.length >= 2 ? currentPoints : [[currentPoints[0][0], currentPoints[0][1]], [currentPoints[0][0] + 50, currentPoints[0][1] + 50]],
             properties: {
               color: activeColor,
               strokeWidth: activeStrokeWidth,
@@ -70,7 +68,7 @@ export default function CADCanvas({
             },
           };
 
-          if (activeTool === 'circle') {
+          if (activeTool === 'circle' && currentPoints.length >= 2) {
             const [x1, y1] = currentPoints[0];
             const [x2, y2] = currentPoints[1];
             const radius = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
