@@ -116,6 +116,9 @@ export default function Viewer3D() {
   const onContextCreate = async (gl: any) => {
     const { drawingBufferWidth: width, drawingBufferHeight: height } = gl;
 
+    // Get depth early
+    const depth = parseFloat(extrusionDepth) || 10;
+
     // Create renderer
     const renderer = new Renderer({ gl });
     renderer.setSize(width, height);
@@ -157,7 +160,6 @@ export default function Viewer3D() {
     const matColor = materials[material] || materials.steel;
 
     // Create 3D objects from 2D elements
-    const depth = parseFloat(extrusionDepth) || 10;
     const meshMaterial = new THREE.MeshPhongMaterial({
       color: matColor,
       side: THREE.DoubleSide,
