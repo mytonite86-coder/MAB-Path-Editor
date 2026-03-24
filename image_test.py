@@ -9,7 +9,7 @@ import base64
 from PIL import Image
 import io
 
-BACKEND_URL = "https://blueprint-ai-44.preview.emergentagent.com/api"
+BACKEND_URL = "https://cad-text-to-3d.preview.emergentagent.com/api"
 
 def create_proper_test_image():
     """Create a proper test image using PIL"""

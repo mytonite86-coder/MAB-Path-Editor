@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 import os
 
 # Get backend URL from frontend .env file
-BACKEND_URL = "https://blueprint-ai-44.preview.emergentagent.com/api"
+BACKEND_URL = "https://cad-text-to-3d.preview.emergentagent.com/api"
 
 class CADAPITester:
     def __init__(self):
