@@ -26,6 +26,7 @@ interface CADElement {
   points: number[][];
   properties: any;
   id?: string;
+  depth?: number; // Z-axis depth for 3D
 }
 
 export default function Canvas() {
@@ -39,6 +40,7 @@ export default function Canvas() {
   const [activeStrokeWidth, setActiveStrokeWidth] = useState(2);
   const [canvasBackground, setCanvasBackground] = useState<'dark' | 'light'>('dark');
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [activeDepth, setActiveDepth] = useState('10'); // Default depth for 3D
   
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiMode, setAiMode] = useState<'text' | 'image' | null>(null);
@@ -378,6 +380,44 @@ export default function Canvas() {
           </ScrollView>
         </View>
 
+        <View style={styles.depthSection}>
+          <Text style={styles.sectionTitle}>3D Depth (mm)</Text>
+          <View style={styles.depthControls}>
+            <TextInput
+              style={styles.depthInput}
+              value={activeDepth}
+              onChangeText={setActiveDepth}
+              keyboardType="numeric"
+              placeholder="10"
+              placeholderTextColor="#666"
+            />
+            <View style={styles.depthPresets}>
+              {['5', '10', '20', '50'].map((depth) => (
+                <TouchableOpacity
+                  key={depth}
+                  style={[
+                    styles.depthPreset,
+                    activeDepth === depth && styles.depthPresetActive,
+                  ]}
+                  onPress={() => setActiveDepth(depth)}
+                >
+                  <Text
+                    style={[
+                      styles.depthPresetText,
+                      activeDepth === depth && styles.depthPresetTextActive,
+                    ]}
+                  >
+                    {depth}mm
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <Text style={styles.depthHint}>
+            Set depth for new shapes (for 3D view)
+          </Text>
+        </View>
+
         <Text style={styles.sectionTitle}>AI Generation</Text>
         <View style={styles.aiButtons}>
           <TouchableOpacity
@@ -682,6 +722,54 @@ const styles = StyleSheet.create({
   colorLabel: {
     color: '#fff',
     fontSize: 11,
+  },
+  depthSection: {
+    marginTop: 8,
+  },
+  depthControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  depthInput: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    width: 80,
+    fontSize: 16,
+  },
+  depthPresets: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+  },
+  depthPreset: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  depthPresetActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  depthPresetText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  depthPresetTextActive: {
+    fontWeight: '600',
+  },
+  depthHint: {
+    color: '#666',
+    fontSize: 11,
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   aiButtons: {
     flexDirection: 'row',
