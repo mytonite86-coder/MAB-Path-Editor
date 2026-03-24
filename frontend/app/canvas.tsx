@@ -239,12 +239,17 @@ export default function Canvas() {
       ]
     );
   };
+
+  const handleClear = () => {
     Alert.alert(
       'Clear Canvas',
       'Are you sure you want to clear all elements?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: () => setElements([]) },
+        { text: 'Clear', style: 'destructive', onPress: () => {
+          setElements([]);
+          setSelectedElementId(null);
+        }},
       ]
     );
   };
@@ -284,7 +289,7 @@ export default function Canvas() {
         </View>
       </View>
 
-      <ScrollView style={styles.content}>
+      <View style={styles.canvasContainer}>
         <CADCanvas
           elements={elements}
           onElementsChange={setElements}
@@ -295,6 +300,9 @@ export default function Canvas() {
           selectedElementId={selectedElementId}
           onElementSelect={setSelectedElementId}
         />
+      </View>
+
+      <ScrollView style={styles.controlsContainer} contentContainerStyle={styles.controlsContent}>
 
         <Text style={styles.sectionTitle}>Drawing Tools</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolsScroll}>
@@ -579,9 +587,16 @@ const styles = StyleSheet.create({
     padding: 8,
     marginLeft: 8,
   },
-  content: {
-    flex: 1,
+  canvasContainer: {
     padding: 16,
+    paddingBottom: 8,
+  },
+  controlsContainer: {
+    flex: 1,
+  },
+  controlsContent: {
+    padding: 16,
+    paddingTop: 8,
   },
   sectionTitle: {
     fontSize: 18,
