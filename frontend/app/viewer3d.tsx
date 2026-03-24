@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ export default function Viewer3D() {
   const [showEngineering, setShowEngineering] = useState(false);
   const [material, setMaterial] = useState('steel');
   const [engineeringData, setEngineeringData] = useState<any>(null);
+  const sceneRunIdRef = useRef(0);
 
   const getFallbackDepth = (els: CADElement[], preferredDepth?: number) => {
     const depthFromElements = els.find((element) => {
@@ -144,6 +145,8 @@ export default function Viewer3D() {
   };
 
   const onContextCreate = async (gl: any) => {
+    sceneRunIdRef.current += 1;
+    const currentSceneRunId = sceneRunIdRef.current;
     const { drawingBufferWidth: width, drawingBufferHeight: height } = gl;
 
     // Get depth early
@@ -277,6 +280,10 @@ export default function Viewer3D() {
     // Animation loop
     let rotationY = 0;
     const render = () => {
+      if (sceneRunIdRef.current !== currentSceneRunId) {
+        return;
+      }
+
       requestAnimationFrame(render);
 
       // Rotate scene around Y axis (vertical rotation)
@@ -288,6 +295,12 @@ export default function Viewer3D() {
     };
     render();
   };
+
+  useEffect(() => {
+    return () => {
+      sceneRunIdRef.current += 1;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -484,7 +497,10 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1a1a1a',
   },
   backButton: {
-    padding: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     fontSize: 20,
@@ -494,7 +510,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   engineeringButton: {
-    padding: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   glView: {
     flex: 1,

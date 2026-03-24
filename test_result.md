@@ -126,7 +126,7 @@ backend:
     file: "server.py, ai_service.py"
     stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -140,6 +140,9 @@ backend:
       - working: true
         agent: "main"
         comment: "Added deterministic low-credit primitive parsing for common solid prompts (block/box/cube/cylinder) before the LLM call. Self-tested via curl: 'Create a solid 50mm x 30mm x 20mm rectangular block' now returns one rectangle with depth 20; cylinder prompt returns one circle with depth 60."
+      - working: true
+        agent: "testing"
+        comment: "✅ REGRESSION TESTED: Primitive text-to-CAD responses verified by pytest for solid block and cylinder prompts. Backend returned one solid-compatible element with correct depth values."
 
   - task: "AI Image-to-CAD Generation"
     implemented: true
@@ -193,7 +196,7 @@ frontend:
     file: "app/auth.tsx, context/AuthContext.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -204,6 +207,9 @@ frontend:
       - working: true
         agent: "main"
         comment: "Replaced invalid Ionicons glyph on auth screen and added testIDs to auth inputs/buttons. Self-verified the auth route loads correctly in browser preview without the old blueprint icon warning."
+      - working: true
+        agent: "testing"
+        comment: "✅ REGRESSION TESTED: Auth screen loaded correctly and key controls remained usable after the icon/testID update."
 
   - task: "Home Dashboard"
     implemented: true
@@ -226,7 +232,7 @@ frontend:
     file: "app/canvas.tsx, components/CADCanvas.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -237,6 +243,9 @@ frontend:
       - working: true
         agent: "main"
         comment: "Applied active depth to manually drawn shapes, improved contrast for black/white elements against the canvas background, normalized generated elements with IDs for downstream editing, and added testIDs to critical canvas controls."
+      - working: true
+        agent: "testing"
+        comment: "✅ REGRESSION TESTED: Canvas flow preserved generated elementsData with normalized IDs/depth and remained compatible with the updated Text-to-CAD -> View in 3D flow."
 
   - task: "AI Generation Integration"
     implemented: true
@@ -244,7 +253,7 @@ frontend:
     file: "app/canvas.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -255,6 +264,9 @@ frontend:
       - working: true
         agent: "main"
         comment: "Normalized AI-generated elements on receipt so they always carry IDs and valid depth values, which should preserve editing and 3D viewing after generation."
+      - working: true
+        agent: "testing"
+        comment: "✅ REGRESSION TESTED: Text-to-CAD flow from canvas succeeded for the solid block prompt and passed the user into a working 3D viewer with depth 20."
 
   - task: "3D Viewer Solid Rendering"
     implemented: true
@@ -262,7 +274,7 @@ frontend:
     file: "app/viewer3d.tsx"
     stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "user"
@@ -273,6 +285,9 @@ frontend:
       - working: true
         agent: "main"
         comment: "Updated the viewer to rebuild using current elements/material/depth, use element depth as default, and added testIDs. Self-verified with browser preview screenshot that a solid rectangular block now renders visibly in 3D and the depth field shows 20mm for the test block."
+      - working: true
+        agent: "testing"
+        comment: "✅ REGRESSION TESTED: Direct viewer route and canvas-generated viewer route both rendered a visible solid block. Minor follow-up UX polish from testing was applied: larger top touch targets and safer render-loop invalidation."
 
   - task: "Blueprint Gallery"
     implemented: true
@@ -311,15 +326,8 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "AI Text-to-CAD Generation"
-    - "3D Viewer Solid Rendering"
-    - "CAD Canvas with Drawing Tools"
-    - "AI Generation Integration"
-    - "Authentication UI (Login/Register/Guest)"
-  stuck_tasks:
-    - "AI Text-to-CAD Generation"
-    - "3D Viewer Solid Rendering"
+  current_focus: []
+  stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
@@ -332,3 +340,5 @@ agent_communication:
     message: "✅ FRONTEND TESTING COMPLETE: All 6 frontend tasks tested and working perfectly. Mobile-first UI (390x844) renders correctly with dark theme. Auth flow with guest mode works, home dashboard displays all components, CAD canvas with drawing tools functional, AI generation modals work, profile and gallery accessible. App is fully functional for mobile users. Minor: Some Playwright script syntax issues encountered but visual testing confirmed all features working."
   - agent: "main"
     message: "Targeted regression fix in progress. Backend now has deterministic solid generation for common 3D prompts to conserve credits, and self-tests confirm correct single-element JSON responses for a solid block and cylinder. Frontend viewer bug was reproduced and fixed; browser preview now shows a visible solid block in /viewer3d and auth icon warning is cleared. Please validate AI text-to-3D, 3D viewer rendering, and basic canvas editability after AI generation."
+  - agent: "testing"
+    message: "✅ TARGETED REGRESSION COMPLETE: Backend and frontend passed the requested block/cylinder, auth, canvas, and viewer checks. No broken flows found in tested scope. Minor optional feedback about home screen testIDs and viewer touch target sizing was addressed by main agent afterward."

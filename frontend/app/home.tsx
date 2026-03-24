@@ -49,31 +49,31 @@ export default function Home() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView style={styles.container} testID="home-screen">
+      <View style={styles.header} testID="home-header">
         <View>
-          <Text style={styles.greeting}>
+          <Text style={styles.greeting} testID="home-greeting">
             {isGuest ? 'Welcome, Guest!' : `Welcome, ${user?.username}!`}
           </Text>
           {user?.is_premium && (
-            <View style={styles.premiumBadge}>
+            <View style={styles.premiumBadge} testID="home-premium-badge">
               <Ionicons name="star" size={12} color="#FFD700" />
               <Text style={styles.premiumText}>Premium</Text>
             </View>
           )}
           {isGuest && (
-            <Text style={styles.guestWarning}>Limited features in guest mode</Text>
+            <Text style={styles.guestWarning} testID="home-guest-warning">Limited features in guest mode</Text>
           )}
         </View>
-        <TouchableOpacity onPress={() => router.push('/profile')}>
+        <TouchableOpacity onPress={() => router.push('/profile')} testID="home-profile-button">
           <Ionicons name="person-circle-outline" size={40} color="#007AFF" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+      <ScrollView style={styles.content} testID="home-content-scroll">
+        <Text style={styles.sectionTitle} testID="home-quick-actions-title">Quick Actions</Text>
 
-        <TouchableOpacity style={styles.card} onPress={handleNewProject}>
+        <TouchableOpacity style={styles.card} onPress={handleNewProject} testID="home-new-blueprint-card">
           <View style={styles.cardIcon}>
             <Ionicons name="add-circle" size={48} color="#007AFF" />
           </View>
@@ -89,6 +89,7 @@ export default function Home() {
         <TouchableOpacity
           style={styles.card}
           onPress={() => router.push('/canvas?mode=text')}
+          testID="home-text-to-cad-card"
         >
           <View style={styles.cardIcon}>
             <Ionicons name="text" size={48} color="#34C759" />
@@ -105,6 +106,7 @@ export default function Home() {
         <TouchableOpacity
           style={styles.card}
           onPress={() => router.push('/canvas?mode=image')}
+          testID="home-image-to-cad-card"
         >
           <View style={styles.cardIcon}>
             <Ionicons name="image" size={48} color="#FF9500" />
@@ -119,7 +121,7 @@ export default function Home() {
         </TouchableOpacity>
 
         {!isGuest && (
-          <TouchableOpacity style={styles.card} onPress={handleMyBlueprints}>
+          <TouchableOpacity style={styles.card} onPress={handleMyBlueprints} testID="home-my-blueprints-card">
             <View style={styles.cardIcon}>
               <Ionicons name="folder-open" size={48} color="#5856D6" />
             </View>
@@ -133,28 +135,28 @@ export default function Home() {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.sectionTitle}>Features</Text>
+        <Text style={styles.sectionTitle} testID="home-features-title">Features</Text>
 
         <View style={styles.featuresGrid}>
-          <View style={styles.featureCard}>
+          <View style={styles.featureCard} testID="home-feature-draw-tools">
             <Ionicons name="pencil" size={32} color="#007AFF" />
             <Text style={styles.featureTitle}>Draw Tools</Text>
             <Text style={styles.featureText}>Lines, shapes, polygons</Text>
           </View>
 
-          <View style={styles.featureCard}>
+          <View style={styles.featureCard} testID="home-feature-layers">
             <Ionicons name="layers" size={32} color="#34C759" />
             <Text style={styles.featureTitle}>Layers</Text>
             <Text style={styles.featureText}>Organize your work</Text>
           </View>
 
-          <View style={styles.featureCard}>
+          <View style={styles.featureCard} testID="home-feature-precision">
             <Ionicons name="resize" size={32} color="#FF9500" />
             <Text style={styles.featureTitle}>Precision</Text>
             <Text style={styles.featureText}>Accurate measurements</Text>
           </View>
 
-          <View style={styles.featureCard}>
+          <View style={styles.featureCard} testID="home-feature-export">
             <Ionicons name="download" size={32} color="#5856D6" />
             <Text style={styles.featureTitle}>Export</Text>
             <Text style={styles.featureText}>PDF, PNG, DXF</Text>
@@ -163,8 +165,8 @@ export default function Home() {
       </ScrollView>
 
       {(isGuest || !user?.is_premium) && (
-        <View style={styles.upgradeBar}>
-          <Text style={styles.upgradeText}>
+        <View style={styles.upgradeBar} testID="home-upgrade-bar">
+          <Text style={styles.upgradeText} testID="home-upgrade-text">
             {isGuest
               ? 'Sign up to unlock full features!'
               : 'Upgrade to Premium for unlimited AI generations'}
@@ -172,6 +174,7 @@ export default function Home() {
           <TouchableOpacity
             style={styles.upgradeButton}
             onPress={() => (isGuest ? router.push('/auth') : router.push('/profile'))}
+            testID="home-upgrade-button"
           >
             <Text style={styles.upgradeButtonText}>
               {isGuest ? 'Sign Up' : 'Upgrade'}
