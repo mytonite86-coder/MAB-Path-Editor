@@ -124,9 +124,9 @@ backend:
     implemented: true
     working: true
     file: "server.py, ai_service.py"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
@@ -134,6 +134,12 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Text-to-CAD generation working for both guest and authenticated users. Successfully generated 13 CAD elements for '10x10 room with door' and 18 elements for 'office layout'. GPT-5.1 integration functional."
+      - working: false
+        agent: "user"
+        comment: "User reported the 3D text-to-CAD flow was producing flat thin walls instead of a solid object for dimensioned 3D prompts."
+      - working: true
+        agent: "main"
+        comment: "Added deterministic low-credit primitive parsing for common solid prompts (block/box/cube/cylinder) before the LLM call. Self-tested via curl: 'Create a solid 50mm x 30mm x 20mm rectangular block' now returns one rectangle with depth 20; cylinder prompt returns one circle with depth 60."
 
   - task: "AI Image-to-CAD Generation"
     implemented: true
@@ -187,7 +193,7 @@ frontend:
     file: "app/auth.tsx, context/AuthContext.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
@@ -195,6 +201,9 @@ frontend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Auth screen loads correctly with 'CAD Blueprint' title and proper form fields. 'Continue as Guest' button works and navigates to home screen successfully. Guest mode functionality confirmed working."
+      - working: true
+        agent: "main"
+        comment: "Replaced invalid Ionicons glyph on auth screen and added testIDs to auth inputs/buttons. Self-verified the auth route loads correctly in browser preview without the old blueprint icon warning."
 
   - task: "Home Dashboard"
     implemented: true
@@ -217,7 +226,7 @@ frontend:
     file: "app/canvas.tsx, components/CADCanvas.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
@@ -225,6 +234,9 @@ frontend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: CAD Canvas loads correctly with 'CAD Canvas' title. All drawing tools visible and selectable (Select, Line, Rectangle, Circle). Tool selection works properly. Undo and clear buttons visible with proper icons. Canvas area renders with grid background. Navigation back to home works."
+      - working: true
+        agent: "main"
+        comment: "Applied active depth to manually drawn shapes, improved contrast for black/white elements against the canvas background, normalized generated elements with IDs for downstream editing, and added testIDs to critical canvas controls."
 
   - task: "AI Generation Integration"
     implemented: true
@@ -232,7 +244,7 @@ frontend:
     file: "app/canvas.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
@@ -240,6 +252,27 @@ frontend:
       - working: true
         agent: "testing"
         comment: "✅ TESTED: Text-to-CAD modal opens correctly with proper form fields. Can enter prompts and submit for AI generation. Image-to-CAD modal opens with image picker button visible. AI integration UI working properly. Modals close correctly with close button."
+      - working: true
+        agent: "main"
+        comment: "Normalized AI-generated elements on receipt so they always carry IDs and valid depth values, which should preserve editing and 3D viewing after generation."
+
+  - task: "3D Viewer Solid Rendering"
+    implemented: true
+    working: true
+    file: "app/viewer3d.tsx"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported the text-to-3D result still appeared broken even after backend prompt changes."
+      - working: false
+        agent: "main"
+        comment: "Self-testing showed the viewer route initially rendered only the axes/grid because the GL scene was mounting before route elements were available."
+      - working: true
+        agent: "main"
+        comment: "Updated the viewer to rebuild using current elements/material/depth, use element depth as default, and added testIDs. Self-verified with browser preview screenshot that a solid rectangular block now renders visibly in 3D and the depth field shows 20mm for the test block."
 
   - task: "Blueprint Gallery"
     implemented: true
@@ -278,8 +311,15 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "AI Text-to-CAD Generation"
+    - "3D Viewer Solid Rendering"
+    - "CAD Canvas with Drawing Tools"
+    - "AI Generation Integration"
+    - "Authentication UI (Login/Register/Guest)"
+  stuck_tasks:
+    - "AI Text-to-CAD Generation"
+    - "3D Viewer Solid Rendering"
   test_all: false
   test_priority: "high_first"
 
@@ -290,3 +330,5 @@ agent_communication:
     message: "✅ BACKEND TESTING COMPLETE: All 5 backend tasks tested and working perfectly. Success rate: 87.5% (14/16 tests passed). Authentication, AI generation, CRUD operations, and premium activation all functional. Image-to-CAD requires proper image formats (PNG/JPEG with real visual features). Backend API fully operational at https://cad-text-to-3d.preview.emergentagent.com/api"
   - agent: "testing"
     message: "✅ FRONTEND TESTING COMPLETE: All 6 frontend tasks tested and working perfectly. Mobile-first UI (390x844) renders correctly with dark theme. Auth flow with guest mode works, home dashboard displays all components, CAD canvas with drawing tools functional, AI generation modals work, profile and gallery accessible. App is fully functional for mobile users. Minor: Some Playwright script syntax issues encountered but visual testing confirmed all features working."
+  - agent: "main"
+    message: "Targeted regression fix in progress. Backend now has deterministic solid generation for common 3D prompts to conserve credits, and self-tests confirm correct single-element JSON responses for a solid block and cylinder. Frontend viewer bug was reproduced and fixed; browser preview now shows a visible solid block in /viewer3d and auth icon warning is cleared. Please validate AI text-to-3D, 3D viewer rendering, and basic canvas editability after AI generation."

@@ -54,14 +54,14 @@ export default function Auth() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Ionicons name="blueprint" size={64} color="#007AFF" />
-          <Text style={styles.title}>CAD Blueprint</Text>
-          <Text style={styles.subtitle}>AI-Powered Blueprint Creation</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} testID="auth-screen">
+        <View style={styles.header} testID="auth-header">
+          <Ionicons name="cube-outline" size={64} color="#007AFF" />
+          <Text style={styles.title} testID="auth-title">CAD Blueprint</Text>
+          <Text style={styles.subtitle} testID="auth-subtitle">AI-Powered Blueprint Creation</Text>
         </View>
 
-        <View style={styles.formContainer}>
+        <View style={styles.formContainer} testID="auth-form-container">
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -70,6 +70,7 @@ export default function Auth() {
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
+            testID="auth-email-input"
           />
 
           {!isLogin && (
@@ -80,6 +81,7 @@ export default function Auth() {
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
+              testID="auth-username-input"
             />
           )}
 
@@ -90,12 +92,14 @@ export default function Auth() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            testID="auth-password-input"
           />
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleSubmit}
             disabled={loading}
+            testID="auth-submit-button"
           >
             <Text style={styles.buttonText}>
               {loading ? 'Please wait...' : isLogin ? 'Login' : 'Sign Up'}
@@ -105,6 +109,7 @@ export default function Auth() {
           <TouchableOpacity
             style={styles.switchButton}
             onPress={() => setIsLogin(!isLogin)}
+            testID="auth-switch-mode-button"
           >
             <Text style={styles.switchText}>
               {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Login'}
@@ -117,7 +122,7 @@ export default function Auth() {
             <View style={styles.dividerLine} />
           </View>
 
-          <TouchableOpacity style={styles.guestButton} onPress={handleGuestMode}>
+          <TouchableOpacity style={styles.guestButton} onPress={handleGuestMode} testID="auth-guest-button">
             <Text style={styles.guestButtonText}>Continue as Guest</Text>
             <Text style={styles.guestButtonSubtext}>
               (Limited features - can't save blueprints)

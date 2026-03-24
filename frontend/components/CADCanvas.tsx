@@ -19,6 +19,7 @@ interface CADCanvasProps {
   activeTool?: string;
   activeColor?: string;
   activeStrokeWidth?: number;
+  activeDepth?: number;
   backgroundColor?: 'dark' | 'light';
   selectedElementId?: string | null;
   onElementSelect?: (id: string | null) => void;
@@ -30,6 +31,7 @@ export default function CADCanvas({
   activeTool = 'select',
   activeColor = '#000000',
   activeStrokeWidth = 2,
+  activeDepth = 10,
   backgroundColor = 'dark',
   selectedElementId = null,
   onElementSelect,
@@ -37,6 +39,20 @@ export default function CADCanvas({
   const [currentPoints, setCurrentPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [dragOffset, setDragOffset] = useState<{x: number, y: number} | null>(null);
+
+  const getVisibleColor = (rawColor: string) => {
+    const normalizedColor = rawColor.toLowerCase();
+
+    if (backgroundColor === 'dark' && (normalizedColor === '#000000' || normalizedColor === '#000')) {
+      return '#F5F5F5';
+    }
+
+    if (backgroundColor === 'light' && (normalizedColor === '#ffffff' || normalizedColor === '#fff')) {
+      return '#111111';
+    }
+
+    return rawColor;
+  };
 
   const isPointInElement = (x: number, y: number, element: CADElement): boolean => {
     const { type, points, properties } = element;
@@ -153,6 +169,7 @@ export default function CADCanvas({
           color: activeColor,
           strokeWidth: activeStrokeWidth,
           layer: 'default',
+          depth: activeDepth,
         },
       };
 
@@ -175,7 +192,7 @@ export default function CADCanvas({
 
   const renderElement = (element: CADElement, index: number) => {
     const { type, points, properties } = element;
-    const color = properties.color || '#000000';
+    const color = getVisibleColor(properties.color || '#000000');
     const strokeWidth = properties.strokeWidth || 2;
     const key = element.id || `element_${index}`;
     const isSelected = element.id === selectedElementId;
@@ -226,6 +243,7 @@ export default function CADCanvas({
                 stroke={color}
                 strokeWidth={strokeWidth}
                 fill={properties.filled ? color : 'none'}
+                fillOpacity={properties.filled ? 0.2 : 0}
               />
               {isSelected && (
                 <Rect
@@ -255,6 +273,7 @@ export default function CADCanvas({
                 stroke={color}
                 strokeWidth={strokeWidth}
                 fill={properties.filled ? color : 'none'}
+                fillOpacity={properties.filled ? 0.2 : 0}
               />
               {isSelected && (
                 <Circle
@@ -368,6 +387,7 @@ export default function CADCanvas({
   return (
     <View 
       style={styles.container}
+      testID="cad-canvas-surface"
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
       onResponderGrant={handleTouchStart}

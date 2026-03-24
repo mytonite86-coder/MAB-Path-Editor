@@ -2,6 +2,7 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from typing import List, Dict, Any, Optional
 import json
 import os
+import re
 import uuid
 from dotenv import load_dotenv
 
@@ -15,6 +16,161 @@ class AICADService:
     
     def __init__(self):
         self.api_key = EMERGENT_LLM_KEY
+
+    @staticmethod
+    def _to_millimeters(value: str, unit: Optional[str]) -> float:
+        numeric_value = float(value)
+        scale = {
+            "mm": 1.0,
+            "cm": 10.0,
+            "m": 1000.0,
+        }
+        return numeric_value * scale.get((unit or "mm").lower(), 1.0)
+
+    @staticmethod
+    def _safe_canvas_size(value: float, minimum: float = 5.0, maximum: float = 700.0) -> float:
+        return max(minimum, min(value, maximum))
+
+    def _build_centered_block(
+        self,
+        width_mm: float,
+        height_mm: float,
+        depth_mm: float,
+        description: str,
+    ) -> Dict[str, Any]:
+        safe_width = self._safe_canvas_size(width_mm)
+        safe_height = self._safe_canvas_size(height_mm)
+        safe_depth = self._safe_canvas_size(depth_mm, maximum=500.0)
+        half_width = safe_width / 2
+        half_height = safe_height / 2
+
+        return {
+            "elements": [
+                {
+                    "type": "rectangle",
+                    "points": [
+                        [400 - half_width, 300 - half_height],
+                        [400 + half_width, 300 + half_height],
+                    ],
+                    "properties": {
+                        "color": "#000000",
+                        "strokeWidth": 2,
+                        "depth": safe_depth,
+                        "filled": True,
+                    },
+                }
+            ],
+            "description": description,
+            "generation_id": str(uuid.uuid4()),
+        }
+
+    def _build_centered_cylinder(
+        self,
+        diameter_mm: float,
+        depth_mm: float,
+        description: str,
+    ) -> Dict[str, Any]:
+        safe_diameter = self._safe_canvas_size(diameter_mm)
+        safe_depth = self._safe_canvas_size(depth_mm, maximum=500.0)
+
+        return {
+            "elements": [
+                {
+                    "type": "circle",
+                    "points": [[400, 300]],
+                    "properties": {
+                        "color": "#000000",
+                        "strokeWidth": 2,
+                        "radius": safe_diameter / 2,
+                        "depth": safe_depth,
+                        "filled": True,
+                    },
+                }
+            ],
+            "description": description,
+            "generation_id": str(uuid.uuid4()),
+        }
+
+    def _resolve_units(self, explicit_units: List[Optional[str]]) -> List[str]:
+        resolved_units: List[str] = []
+        active_unit = next((unit for unit in explicit_units if unit), "mm")
+
+        for unit in explicit_units:
+            if unit:
+                active_unit = unit
+            resolved_units.append(active_unit)
+
+        return resolved_units
+
+    def _build_primitive_from_prompt(self, prompt: str) -> Optional[Dict[str, Any]]:
+        normalized_prompt = prompt.lower().replace("×", "x")
+        box_keywords = ["box", "block", "cuboid", "rectangular prism", "rectangular block", "cube"]
+        has_box_keyword = any(keyword in normalized_prompt for keyword in box_keywords)
+
+        three_axis_match = re.search(
+            r"(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*x\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*x\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)?",
+            normalized_prompt,
+        )
+
+        if three_axis_match and (has_box_keyword or "solid" in normalized_prompt or "3d" in normalized_prompt):
+            values = [
+                three_axis_match.group(1),
+                three_axis_match.group(3),
+                three_axis_match.group(5),
+            ]
+            explicit_units = [
+                three_axis_match.group(2),
+                three_axis_match.group(4),
+                three_axis_match.group(6),
+            ]
+            resolved_units = self._resolve_units(explicit_units)
+            width_mm, height_mm, depth_mm = [
+                self._to_millimeters(value, unit)
+                for value, unit in zip(values, resolved_units)
+            ]
+
+            if "cube" in normalized_prompt and len({round(width_mm, 4), round(height_mm, 4), round(depth_mm, 4)}) == 1:
+                description = f"Solid {width_mm:g}mm cube"
+            else:
+                description = f"Solid {width_mm:g}mm x {height_mm:g}mm x {depth_mm:g}mm rectangular block"
+
+            return self._build_centered_block(width_mm, height_mm, depth_mm, description)
+
+        if "cube" in normalized_prompt:
+            cube_match = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*(?:cube|side)", normalized_prompt)
+            if cube_match:
+                side_mm = self._to_millimeters(cube_match.group(1), cube_match.group(2))
+                return self._build_centered_block(
+                    side_mm,
+                    side_mm,
+                    side_mm,
+                    f"Solid {side_mm:g}mm cube",
+                )
+
+        if "cylinder" in normalized_prompt:
+            diameter_match = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*(?:diameter|dia)", normalized_prompt)
+            radius_match = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*radius", normalized_prompt)
+            height_match = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*(?:tall|high|height|deep)", normalized_prompt)
+
+            if diameter_match and height_match:
+                diameter_mm = self._to_millimeters(diameter_match.group(1), diameter_match.group(2))
+                height_mm = self._to_millimeters(height_match.group(1), height_match.group(2))
+                return self._build_centered_cylinder(
+                    diameter_mm,
+                    height_mm,
+                    f"Solid cylinder with {diameter_mm:g}mm diameter and {height_mm:g}mm height",
+                )
+
+            if radius_match and height_match:
+                radius_mm = self._to_millimeters(radius_match.group(1), radius_match.group(2))
+                height_mm = self._to_millimeters(height_match.group(1), height_match.group(2))
+                return self._build_centered_cylinder(
+                    radius_mm * 2,
+                    height_mm,
+                    f"Solid cylinder with {radius_mm:g}mm radius and {height_mm:g}mm height",
+                )
+
+        return None
         
     async def text_to_cad(self, prompt: str) -> Dict[str, Any]:
         """
@@ -63,6 +219,13 @@ COORDINATE SYSTEM: Canvas is 800x600, center at (400, 300)
 DO NOT create multiple faces or walls - create ONE solid element with its full depth.
 Return ONLY valid JSON, no markdown or explanation."""
         
+        primitive_result = self._build_primitive_from_prompt(prompt)
+        if primitive_result:
+            return primitive_result
+
+        if not self.api_key:
+            raise RuntimeError("EMERGENT_LLM_KEY is not configured")
+
         try:
             chat = LlmChat(
                 api_key=self.api_key,
@@ -101,7 +264,7 @@ Return ONLY valid JSON, no markdown or explanation."""
                     "description": cad_data.get("description", "CAD drawing generated"),
                     "generation_id": str(uuid.uuid4())
                 }
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 # If JSON parsing fails, return a simple error shape
                 return {
                     "elements": [

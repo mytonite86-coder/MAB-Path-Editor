@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,25 @@ export default function Viewer3D() {
   const [material, setMaterial] = useState('steel');
   const [engineeringData, setEngineeringData] = useState<any>(null);
 
+  const getFallbackDepth = (els: CADElement[], preferredDepth?: number) => {
+    const depthFromElements = els.find((element) => {
+      const depth = Number(element.properties?.depth);
+      return Number.isFinite(depth) && depth > 0;
+    })?.properties?.depth;
+
+    const candidateDepth = Number(depthFromElements ?? preferredDepth ?? 10);
+    return Number.isFinite(candidateDepth) && candidateDepth > 0 ? candidateDepth : 10;
+  };
+
+  const resolvedDepth = useMemo(
+    () => getFallbackDepth(elements, Number.parseFloat(extrusionDepth)),
+    [elements, extrusionDepth]
+  );
+
+  const viewerKey = useMemo(() => {
+    return `${material}-${resolvedDepth}-${JSON.stringify(elements)}`;
+  }, [elements, material, resolvedDepth]);
+
   useEffect(() => {
     if (elementsData) {
       try {
@@ -38,13 +57,21 @@ export default function Viewer3D() {
         console.log('3D Viewer - Parsed elements:', parsed);
         console.log('3D Viewer - Element count:', parsed.length);
         setElements(parsed);
-        calculateEngineering(parsed, 10, 'steel');
+        const suggestedDepth = getFallbackDepth(parsed);
+        setExtrusionDepth(String(suggestedDepth));
+        calculateEngineering(parsed, suggestedDepth, 'steel');
       } catch (error) {
         console.error('Error parsing elements:', error);
         Alert.alert('Error', 'Failed to load elements for 3D view');
       }
     }
   }, [elementsData]);
+
+  useEffect(() => {
+    if (elements.length > 0) {
+      calculateEngineering(elements, resolvedDepth, material);
+    }
+  }, [elements, material, resolvedDepth]);
 
   const calculateEngineering = (els: CADElement[], depth: number, mat: string) => {
     // Material properties
@@ -112,7 +139,7 @@ export default function Viewer3D() {
   };
 
   const handleRecalculate = () => {
-    const depth = parseFloat(extrusionDepth) || 10;
+    const depth = resolvedDepth;
     calculateEngineering(elements, depth, material);
   };
 
@@ -120,10 +147,10 @@ export default function Viewer3D() {
     const { drawingBufferWidth: width, drawingBufferHeight: height } = gl;
 
     // Get depth early
-    const depth = parseFloat(extrusionDepth) || 10;
+    const depth = resolvedDepth;
 
     // Create renderer
-    const renderer = new Renderer({ gl });
+    const renderer: any = new Renderer({ gl });
     renderer.setSize(width, height);
     renderer.setClearColor(0x000000);
 
@@ -264,20 +291,30 @@ export default function Viewer3D() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <View style={styles.header} testID="viewer3d-header">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+          testID="viewer3d-back-button"
+        >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.title}>3D Viewer</Text>
+        <Text style={styles.title} testID="viewer3d-title">3D Viewer</Text>
         <TouchableOpacity
           onPress={() => setShowEngineering(!showEngineering)}
           style={styles.engineeringButton}
+          testID="viewer3d-engineering-toggle-button"
         >
           <Ionicons name="analytics" size={24} color="#007AFF" />
         </TouchableOpacity>
       </View>
 
-      <GLView style={styles.glView} onContextCreate={onContextCreate} />
+      <GLView
+        key={viewerKey}
+        style={styles.glView}
+        onContextCreate={onContextCreate}
+        testID="viewer3d-gl-view"
+      />
 
       <View style={styles.controls}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -291,6 +328,7 @@ export default function Viewer3D() {
                 keyboardType="numeric"
                 placeholder="10"
                 placeholderTextColor="#666"
+                testID="viewer3d-depth-input"
               />
             </View>
 
@@ -304,10 +342,8 @@ export default function Viewer3D() {
                       styles.materialButton,
                       material === mat && styles.materialButtonActive,
                     ]}
-                    onPress={() => {
-                      setMaterial(mat);
-                      handleRecalculate();
-                    }}
+                    onPress={() => setMaterial(mat)}
+                    testID={`viewer3d-material-${mat}`}
                   >
                     <Text
                       style={[
@@ -322,7 +358,11 @@ export default function Viewer3D() {
               </ScrollView>
             </View>
 
-            <TouchableOpacity style={styles.recalcButton} onPress={handleRecalculate}>
+            <TouchableOpacity
+              style={styles.recalcButton}
+              onPress={handleRecalculate}
+              testID="viewer3d-update-button"
+            >
               <Ionicons name="refresh" size={20} color="#fff" />
               <Text style={styles.recalcText}>Update</Text>
             </TouchableOpacity>
@@ -332,10 +372,10 @@ export default function Viewer3D() {
 
       <Modal visible={showEngineering} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalContent} testID="viewer3d-engineering-modal">
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Engineering Analysis</Text>
-              <TouchableOpacity onPress={() => setShowEngineering(false)}>
+              <TouchableOpacity onPress={() => setShowEngineering(false)} testID="viewer3d-engineering-close-button">
                 <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -424,7 +464,7 @@ export default function Viewer3D() {
 
       <View style={styles.info}>
         <Ionicons name="information-circle" size={16} color="#666" />
-        <Text style={styles.infoText}>Rotating automatically. Pinch to zoom.</Text>
+        <Text style={styles.infoText} testID="viewer3d-info-text">Rotating automatically. Pinch to zoom.</Text>
       </View>
     </SafeAreaView>
   );

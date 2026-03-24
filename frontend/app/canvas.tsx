@@ -25,7 +25,7 @@ interface CADElement {
   type: string;
   points: number[][];
   properties: any;
-  id?: string;
+  id: string;
   depth?: number; // Z-axis depth for 3D
 }
 
@@ -52,6 +52,24 @@ export default function Canvas() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [blueprintName, setBlueprintName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const parseDepthValue = (value: unknown) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : Number(activeDepth) || 10;
+  };
+
+  const normalizeElements = (incomingElements: CADElement[] = []) => {
+    return incomingElements.map((element, index) => ({
+      ...element,
+      id: element.id || `cad-element-${Date.now()}-${index}`,
+      properties: {
+        color: '#000000',
+        strokeWidth: 2,
+        ...element.properties,
+        depth: parseDepthValue(element.properties?.depth),
+      },
+    }));
+  };
 
   useEffect(() => {
     if (mode === 'text') {
@@ -90,7 +108,9 @@ export default function Canvas() {
       }
 
       const data = await response.json();
-      setElements(data.elements);
+      const normalizedElements = normalizeElements(data.elements);
+      setElements(normalizedElements);
+      setActiveTool('select');
       setShowAIModal(false);
       setTextPrompt('');
       
@@ -153,7 +173,9 @@ export default function Canvas() {
       }
 
       const data = await response.json();
-      setElements(data.elements);
+      const normalizedElements = normalizeElements(data.elements);
+      setElements(normalizedElements);
+      setActiveTool('select');
       setShowAIModal(false);
       setSelectedImage(null);
       setImageInstructions('');
@@ -271,21 +293,37 @@ export default function Canvas() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <View style={styles.header} testID="cad-canvas-header">
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+          testID="cad-canvas-back-button"
+        >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.title}>CAD Canvas</Text>
+        <Text style={styles.title} testID="cad-canvas-title">CAD Canvas</Text>
         <View style={styles.headerButtons}>
           {selectedElementId && (
-            <TouchableOpacity onPress={handleDelete} style={styles.headerButton}>
+            <TouchableOpacity
+              onPress={handleDelete}
+              style={styles.headerButton}
+              testID="cad-canvas-delete-selected-button"
+            >
               <Ionicons name="trash" size={24} color="#FF3B30" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={handleUndo} style={styles.headerButton}>
+          <TouchableOpacity
+            onPress={handleUndo}
+            style={styles.headerButton}
+            testID="cad-canvas-undo-button"
+          >
             <Ionicons name="arrow-undo" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleClear} style={styles.headerButton}>
+          <TouchableOpacity
+            onPress={handleClear}
+            style={styles.headerButton}
+            testID="cad-canvas-clear-button"
+          >
             <Ionicons name="trash-outline" size={24} color="#FF3B30" />
           </TouchableOpacity>
         </View>
@@ -298,6 +336,7 @@ export default function Canvas() {
           activeTool={activeTool}
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
+          activeDepth={parseDepthValue(activeDepth)}
           backgroundColor={canvasBackground}
           selectedElementId={selectedElementId}
           onElementSelect={setSelectedElementId}
@@ -313,6 +352,7 @@ export default function Canvas() {
               key={tool.id}
               style={[styles.toolButton, activeTool === tool.id && styles.toolButtonActive]}
               onPress={() => setActiveTool(tool.id)}
+              testID={`cad-tool-${tool.id}`}
             >
               <Ionicons
                 name={tool.icon as any}
@@ -334,6 +374,7 @@ export default function Canvas() {
             <TouchableOpacity
               style={styles.backgroundToggle}
               onPress={() => setCanvasBackground(canvasBackground === 'dark' ? 'light' : 'dark')}
+              testID="cad-canvas-background-toggle"
             >
               <Ionicons
                 name={canvasBackground === 'dark' ? 'moon' : 'sunny'}
@@ -366,6 +407,7 @@ export default function Canvas() {
                   activeColor === item.color && styles.colorButtonActive,
                 ]}
                 onPress={() => setActiveColor(item.color)}
+                testID={`cad-color-${item.label.toLowerCase()}`}
               >
                 <View
                   style={[
@@ -390,6 +432,7 @@ export default function Canvas() {
               keyboardType="numeric"
               placeholder="10"
               placeholderTextColor="#666"
+              testID="cad-depth-input"
             />
             <View style={styles.depthPresets}>
               {['5', '10', '20', '50'].map((depth) => (
@@ -400,6 +443,7 @@ export default function Canvas() {
                     activeDepth === depth && styles.depthPresetActive,
                   ]}
                   onPress={() => setActiveDepth(depth)}
+                  testID={`cad-depth-preset-${depth}`}
                 >
                   <Text
                     style={[
@@ -426,6 +470,7 @@ export default function Canvas() {
               setAiMode('text');
               setShowAIModal(true);
             }}
+            testID="cad-text-to-cad-open-button"
           >
             <Ionicons name="text" size={24} color="#34C759" />
             <Text style={styles.aiButtonText}>Text to CAD</Text>
@@ -437,6 +482,7 @@ export default function Canvas() {
               setAiMode('image');
               setShowAIModal(true);
             }}
+            testID="cad-image-to-cad-open-button"
           >
             <Ionicons name="image" size={24} color="#FF9500" />
             <Text style={styles.aiButtonText}>Image to CAD</Text>
@@ -456,12 +502,17 @@ export default function Canvas() {
                 params: { elementsData: JSON.stringify(elements) }
               });
             }}
+            testID="cad-view-3d-button"
           >
             <Ionicons name="cube" size={20} color="#fff" />
             <Text style={styles.view3DButtonText}>View in 3D</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={handleSave}
+            testID="cad-save-blueprint-button"
+          >
             <Ionicons name="save" size={20} color="#fff" />
             <Text style={styles.saveButtonText}>Save Blueprint</Text>
           </TouchableOpacity>
@@ -474,12 +525,12 @@ export default function Canvas() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <View style={styles.modalContent}>
+          <View style={styles.modalContent} testID="cad-ai-modal">
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
+              <Text style={styles.modalTitle} testID="cad-ai-modal-title">
                 {aiMode === 'text' ? 'Text to CAD' : 'Image to CAD'}
               </Text>
-              <TouchableOpacity onPress={() => setShowAIModal(false)}>
+              <TouchableOpacity onPress={() => setShowAIModal(false)} testID="cad-ai-modal-close-button">
                 <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -495,12 +546,14 @@ export default function Canvas() {
                   onChangeText={setTextPrompt}
                   multiline
                   numberOfLines={4}
+                  testID="cad-text-prompt-input"
                 />
 
                 <TouchableOpacity
                   style={[styles.modalButton, isGenerating && styles.modalButtonDisabled]}
                   onPress={handleGenerateFromText}
                   disabled={isGenerating}
+                  testID="cad-generate-text-button"
                 >
                   {isGenerating ? (
                     <ActivityIndicator color="#fff" />
@@ -518,7 +571,11 @@ export default function Canvas() {
               <View style={styles.modalBody}>
                 <Text style={styles.modalLabel}>Upload an image or sketch:</Text>
                 
-                <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
+                <TouchableOpacity
+                  style={styles.imagePickerButton}
+                  onPress={pickImage}
+                  testID="cad-image-picker-button"
+                >
                   <Ionicons name="cloud-upload" size={32} color="#007AFF" />
                   <Text style={styles.imagePickerText}>
                     {selectedImage ? 'Image Selected ✓' : 'Select Image'}
@@ -532,12 +589,14 @@ export default function Canvas() {
                   placeholderTextColor="#666"
                   value={imageInstructions}
                   onChangeText={setImageInstructions}
+                  testID="cad-image-instructions-input"
                 />
 
                 <TouchableOpacity
                   style={[styles.modalButton, (isGenerating || !selectedImage) && styles.modalButtonDisabled]}
                   onPress={handleGenerateFromImage}
                   disabled={isGenerating || !selectedImage}
+                  testID="cad-generate-image-button"
                 >
                   {isGenerating ? (
                     <ActivityIndicator color="#fff" />
@@ -557,10 +616,10 @@ export default function Canvas() {
       {/* Save Modal */}
       <Modal visible={showSaveModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalContent} testID="cad-save-modal">
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Save Blueprint</Text>
-              <TouchableOpacity onPress={() => setShowSaveModal(false)}>
+              <TouchableOpacity onPress={() => setShowSaveModal(false)} testID="cad-save-modal-close-button">
                 <Ionicons name="close" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -573,12 +632,14 @@ export default function Canvas() {
                 placeholderTextColor="#666"
                 value={blueprintName}
                 onChangeText={setBlueprintName}
+                testID="cad-blueprint-name-input"
               />
 
               <TouchableOpacity
                 style={[styles.modalButton, isSaving && styles.modalButtonDisabled]}
                 onPress={handleSaveConfirm}
                 disabled={isSaving}
+                testID="cad-save-confirm-button"
               >
                 {isSaving ? (
                   <ActivityIndicator color="#fff" />
