@@ -174,13 +174,16 @@ export default function Viewer3D() {
     elements.forEach((element, index) => {
       console.log(`3D Viewer - Processing element ${index}:`, element.type, element.points);
       try {
+        // Get depth from element properties, fallback to global depth setting
+        const elementDepth = element.properties?.depth || depth;
+        
         if (element.type === 'rectangle' && element.points.length >= 2) {
           const width = Math.abs(element.points[1][0] - element.points[0][0]);
           const height = Math.abs(element.points[1][1] - element.points[0][1]);
           const centerX = (element.points[0][0] + element.points[1][0]) / 2 - 400;
           const centerZ = -((element.points[0][1] + element.points[1][1]) / 2 - 300);
 
-          const geometry = new THREE.BoxGeometry(width, depth, height);
+          const geometry = new THREE.BoxGeometry(width, elementDepth, height);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set(centerX, 0, centerZ);
           scene.add(mesh);
@@ -198,7 +201,7 @@ export default function Viewer3D() {
           const centerX = element.points[0][0] - 400;
           const centerZ = -(element.points[0][1] - 300);
 
-          const geometry = new THREE.CylinderGeometry(radius, radius, depth, 32);
+          const geometry = new THREE.CylinderGeometry(radius, radius, elementDepth, 32);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set(centerX, 0, centerZ);
           mesh.rotation.x = Math.PI / 2;
@@ -223,7 +226,7 @@ export default function Viewer3D() {
           const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
           const angle = Math.atan2(z2 - z1, x2 - x1);
 
-          const geometry = new THREE.BoxGeometry(length, depth, 3);
+          const geometry = new THREE.BoxGeometry(length, elementDepth, 3);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
           mesh.rotation.y = -angle;

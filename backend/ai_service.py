@@ -26,7 +26,7 @@ class AICADService:
         Returns:
             Dictionary with CAD elements and description
         """
-        system_message = """You are an expert CAD designer. Convert user descriptions into precise CAD elements.
+        system_message = """You are an expert 3D CAD designer. Convert user descriptions into precise 3D CAD elements.
         
         Return your response as a JSON object with this structure:
         {
@@ -41,24 +41,40 @@ class AICADService:
                         "layer": "layer_name",
                         "filled": boolean (for shapes),
                         "radius": number (for circles),
-                        "text": "text content" (for text elements)
+                        "text": "text content" (for text elements),
+                        "depth": number (REQUIRED - depth in mm for 3D extrusion)
                     }
                 }
             ]
         }
         
+        CRITICAL 3D INSTRUCTIONS:
+        - EVERY element MUST have a "depth" property in mm
+        - Think in 3D! For a cube/box, you need faces with appropriate depths
+        - For a 10x10x10mm cube: create rectangles representing walls with proper depths
+        - For hollow objects: use thin depths for walls (e.g., 2mm)
+        - For solid objects: use the full dimension as depth
+        - Example cube 20x20x20mm:
+          * Bottom: 20x20 rectangle, depth: 20mm (the full height)
+          * OR create 6 faces: bottom (depth 2mm), 4 walls (depth 2mm), top (depth 2mm)
+        
         Guidelines:
         - Use coordinate system: 0-800 for x, 0-600 for y (center is 400, 300)
-        - line: needs 2 points [[x1,y1], [x2,y2]]
-        - rectangle: needs 2 points [[x1,y1], [x2,y2]] for top-left and bottom-right corners
-        - circle: needs 1 center point [[x,y]] and radius in properties
-        - polygon: needs multiple points [[x1,y1], [x2,y2], [x3,y3], ...]
-        - text: needs 1 point [[x,y]] for position and "text" in properties
-        - Default colors: walls/main lines: #000000, dimensions: #0000FF, annotations: #FF0000
-        - Default strokeWidth: 2 for main elements, 1 for annotations
-        - Create proper architectural/technical drawings with accurate proportions
+        - line: needs 2 points [[x1,y1], [x2,y2]], depth in mm
+        - rectangle: needs 2 points [[x1,y1], [x2,y2]] for corners, depth for height
+        - circle: needs 1 center point [[x,y]], radius, and depth for cylinder height
+        - polygon: needs multiple points, depth for extrusion
+        - text: needs 1 point [[x,y]], "text" in properties, depth for 3D text
         
-        IMPORTANT: Return ONLY the JSON object, no additional text or explanation."""
+        - Default colors: walls/main: #000000, dimensions: #0000FF, annotations: #FF0000
+        - Default strokeWidth: 2 for main elements, 1 for annotations
+        - Create proper 3D structures with accurate proportions
+        
+        IMPORTANT: 
+        - ALWAYS specify depth for each element based on the 3D object being created
+        - For a "10mm cube", use depth: 10 for the main body
+        - For hollow structures, use appropriate wall thickness (2-5mm typically)
+        - Return ONLY the JSON object, no additional text or explanation."""
         
         try:
             chat = LlmChat(
@@ -83,8 +99,18 @@ class AICADService:
                 cleaned_response = cleaned_response.strip()
                 
                 cad_data = json.loads(cleaned_response)
+                
+                # Ensure all elements have depth property
+                elements = cad_data.get("elements", [])
+                for elem in elements:
+                    if "depth" not in elem.get("properties", {}):
+                        # Default to 10mm if not specified
+                        if "properties" not in elem:
+                            elem["properties"] = {}
+                        elem["properties"]["depth"] = 10
+                
                 return {
-                    "elements": cad_data.get("elements", []),
+                    "elements": elements,
                     "description": cad_data.get("description", "CAD drawing generated"),
                     "generation_id": str(uuid.uuid4())
                 }
@@ -98,7 +124,8 @@ class AICADService:
                             "properties": {
                                 "text": "Error parsing AI response. Try rephrasing your request.",
                                 "color": "#FF0000",
-                                "fontSize": 16
+                                "fontSize": 16,
+                                "depth": 1
                             }
                         }
                     ],
