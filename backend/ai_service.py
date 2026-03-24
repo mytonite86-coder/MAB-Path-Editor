@@ -26,55 +26,42 @@ class AICADService:
         Returns:
             Dictionary with CAD elements and description
         """
-        system_message = """You are an expert 3D CAD designer. Convert user descriptions into precise 3D CAD elements.
-        
-        Return your response as a JSON object with this structure:
+        system_message = """You are an expert 3D CAD designer. Convert user descriptions into a SINGLE solid 3D object.
+
+CRITICAL: For any 3D object (box, cube, cylinder), create ONE element that represents the entire solid object.
+
+Return your response as a JSON object:
+{
+    "description": "Brief description",
+    "elements": [
         {
-            "description": "Brief description of what was created",
-            "elements": [
-                {
-                    "type": "line|rectangle|circle|polygon|text",
-                    "points": [[x1, y1], [x2, y2], ...],
-                    "properties": {
-                        "color": "#hexcolor",
-                        "strokeWidth": number,
-                        "layer": "layer_name",
-                        "filled": boolean (for shapes),
-                        "radius": number (for circles),
-                        "text": "text content" (for text elements),
-                        "depth": number (REQUIRED - depth in mm for 3D extrusion)
-                    }
-                }
-            ]
+            "type": "rectangle" (for boxes/cubes) or "circle" (for cylinders),
+            "points": [[x1, y1], [x2, y2]] for rectangle center, or [[x, y]] for circle center,
+            "properties": {
+                "color": "#000000",
+                "strokeWidth": 2,
+                "depth": THE_FULL_HEIGHT_IN_MM,
+                "filled": true
+            }
         }
-        
-        CRITICAL 3D INSTRUCTIONS:
-        - EVERY element MUST have a "depth" property in mm
-        - Think in 3D! For a cube/box, you need faces with appropriate depths
-        - For a 10x10x10mm cube: create rectangles representing walls with proper depths
-        - For hollow objects: use thin depths for walls (e.g., 2mm)
-        - For solid objects: use the full dimension as depth
-        - Example cube 20x20x20mm:
-          * Bottom: 20x20 rectangle, depth: 20mm (the full height)
-          * OR create 6 faces: bottom (depth 2mm), 4 walls (depth 2mm), top (depth 2mm)
-        
-        Guidelines:
-        - Use coordinate system: 0-800 for x, 0-600 for y (center is 400, 300)
-        - line: needs 2 points [[x1,y1], [x2,y2]], depth in mm
-        - rectangle: needs 2 points [[x1,y1], [x2,y2]] for corners, depth for height
-        - circle: needs 1 center point [[x,y]], radius, and depth for cylinder height
-        - polygon: needs multiple points, depth for extrusion
-        - text: needs 1 point [[x,y]], "text" in properties, depth for 3D text
-        
-        - Default colors: walls/main: #000000, dimensions: #0000FF, annotations: #FF0000
-        - Default strokeWidth: 2 for main elements, 1 for annotations
-        - Create proper 3D structures with accurate proportions
-        
-        IMPORTANT: 
-        - ALWAYS specify depth for each element based on the 3D object being created
-        - For a "10mm cube", use depth: 10 for the main body
-        - For hollow structures, use appropriate wall thickness (2-5mm typically)
-        - Return ONLY the JSON object, no additional text or explanation."""
+    ]
+}
+
+EXAMPLES:
+- "50mm x 30mm x 20mm block":
+  * ONE rectangle: width=50, height=30 in 2D
+  * depth=20 (the FULL 20mm height)
+  * Points: [[375, 285], [425, 315]] (centered at 400,300)
+
+- "40mm diameter x 60mm tall cylinder":
+  * ONE circle: radius=20
+  * depth=60 (the FULL 60mm height)
+  * Points: [[400, 300]]
+
+COORDINATE SYSTEM: Canvas is 800x600, center at (400, 300)
+
+DO NOT create multiple faces or walls - create ONE solid element with its full depth.
+Return ONLY valid JSON, no markdown or explanation."""
         
         try:
             chat = LlmChat(
