@@ -10,11 +10,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  FeatureAttachmentEdge,
   FreeCADFeature,
   FreeCADFeatureParams,
   MeasurementUnit,
   formatMeasurement,
 } from '../utils/freecadWorkflow';
+
+const ATTACHMENT_EDGES: FeatureAttachmentEdge[] = ['start', 'end', 'front', 'back', 'top'];
 
 interface FeaturePropertySheetProps {
   feature: FreeCADFeature | null;
@@ -75,6 +78,48 @@ export const FeaturePropertySheet = ({
                   <Text style={styles.toggleText}>{feature.enabled ? 'On' : 'Off'}</Text>
                 </TouchableOpacity>
               </View>
+
+              {(feature.type === 'flange' || feature.type === 'hem') && (
+                <>
+                  <View style={styles.row}>
+                    <Text style={styles.fieldLabel}>Attached To</Text>
+                    <Text style={styles.helperText}>{feature.attachedTo ? feature.attachedTo : 'No parent selected yet'}</Text>
+                  </View>
+
+                  <View style={styles.row}>
+                    <Text style={styles.fieldLabel}>Attachment Edge</Text>
+                    <View style={styles.edgeWrap}>
+                      {ATTACHMENT_EDGES.map((edge) => (
+                        <TouchableOpacity
+                          key={edge}
+                          style={[styles.edgeChip, feature.attachmentEdge === edge && styles.edgeChipActive]}
+                          onPress={() => onUpdateFeature(feature.id, { attachmentEdge: edge })}
+                          testID={`freecad-edge-${edge}-button`}
+                        >
+                          <Text style={styles.edgeChipText}>{edge}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.row}>
+                    <Text style={styles.fieldLabel}>Bend Angle (deg)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={String(feature.bendAngle)}
+                      onChangeText={(value) => {
+                        const numericValue = Number(value);
+                        if (Number.isFinite(numericValue)) {
+                          onUpdateFeature(feature.id, { bendAngle: numericValue });
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholderTextColor="#666"
+                      testID="freecad-bend-angle-input"
+                    />
+                  </View>
+                </>
+              )}
 
               {FIELDS.map((field) => (
                 <View key={field.key} style={styles.row}>
@@ -149,6 +194,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
+  helperText: {
+    color: '#D0D0D5',
+    fontSize: 13,
+  },
   scrollContent: {
     paddingBottom: 24,
   },
@@ -171,6 +220,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     backgroundColor: '#0A0A0A',
     fontSize: 15,
+  },
+  edgeWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  edgeChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#24242B',
+  },
+  edgeChipActive: {
+    backgroundColor: '#007AFF',
+  },
+  edgeChipText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
   toggleButton: {
     alignSelf: 'flex-start',

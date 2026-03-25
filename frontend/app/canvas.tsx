@@ -124,6 +124,9 @@ export default function Canvas() {
 
   const handleAddFreecadFeature = (type: FreeCADFeatureType) => {
     const nextFeature = createFeature(type, freecadFeatures.length);
+    if ((type === 'flange' || type === 'hem') && selectedFeatureId) {
+      nextFeature.attachedTo = selectedFeatureId;
+    }
     const nextFeatures = [...freecadFeatures, nextFeature];
     setFreecadFeatures(nextFeatures);
     syncFeatureElements(nextFeatures);

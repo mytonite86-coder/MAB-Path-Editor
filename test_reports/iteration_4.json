@@ -1,0 +1,69 @@
+{
+  "summary": "Frontend-only mobile regression for attached sheet-metal workflow was partially validated. Auto-attachment metadata appears for Flange/Hem, and edge/bend controls exist in the property sheet, but core interaction is blocked by a recurring mobile viewport usability bug in the property sheet close/control area.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "FeaturePropertySheet modal",
+        "issue": "On 375x667 viewport, key controls in the sheet are intermittently outside viewport (including close button and edge chips), causing taps/clicks to fail with 'Element is outside of the viewport'. This blocks reliable Base Wall -> Flange -> Hem interactive completion.",
+        "testID": "freecad-close-properties-button",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Base Wall + Flange + Hem -> View in 3D",
+        "issue": "Could not complete end-to-end run in this iteration because property sheet interaction repeatedly blocked progression on mobile viewport.",
+        "affected_testIDs": [
+          "freecad-close-properties-button",
+          "freecad-edge-start-button",
+          "cad-view-3d-button"
+        ]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Canvas property bottom sheet",
+        "issues": [
+          "Bottom sheet interaction area is not consistently reachable/tappable on 375x667, causing workflow dead-ends.",
+          "Controls that should be part of the primary feature-editing flow are not robustly accessible in mobile-first constraints."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration4_smoke_home.jpeg",
+    "/app/test_reports/iteration4_failure.jpeg",
+    "/app/test_reports/iteration4_failure_retry.jpeg",
+    "/app/test_reports/iteration4_failure_attempt3.jpeg",
+    "/root/.emergent/automation_output/20260325_022344/console_20260325_022344.log",
+    "/root/.emergent/automation_output/20260325_022432/console_20260325_022432.log",
+    "/root/.emergent/automation_output/20260325_022455/console_20260325_022455.log",
+    "/root/.emergent/automation_output/20260325_022525/console_20260325_022525.log"
+  ],
+  "action_items": [
+    "Fix FeaturePropertySheet mobile layout/hit-area behavior so close button and edge chips are always inside viewport at 375x667.",
+    "Re-test Base Wall -> Flange -> Hem with real taps on edge controls and bend angle inputs after the sheet fix.",
+    "Re-verify full route into 3D once sheet interaction is stable."
+  ],
+  "critical_code_review_comments": [
+    "Code-level checks confirm attachment wiring exists: handleAddFreecadFeature attaches flange/hem to selectedFeatureId; property sheet renders attachment-edge chips + bend angle input for flange/hem; buildElementsFromFeatures resolves attached geometry for 3D payload.",
+    "frontend/app/canvas.tsx remains very large (>700 lines), increasing UI regression risk in tightly-coupled workflows like feature sheet + tree + routing."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {
+    "backend": "NA (frontend-only scope)",
+    "frontend": "60% (3/5 requested checks partially/fully validated; blocked by critical mobile interaction issue)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Observed in this run: Flange sheet text included attached parent id (feature-baseWall-...), and edge/bend controls were rendered. However, three attempts hit viewport/tapability failures on sheet controls in 375x667, so stop after repeated selector/viewport failures and retest after UI fix.",
+  "rca_of_issue": "RCA: FeaturePropertySheet controls appear rendered but not consistently actionable in mobile web viewport constraints, producing Playwright 'outside viewport' failures for controls that should be tappable in-flow. Repro: auth guest -> home new blueprint -> add baseWall/flange -> interact/close sheet. Mitigation: adjust modal/sheet positioning/scroll behavior and validate control hit-boxes within visible bounds at 375x667 before rerunning E2E."
+}
