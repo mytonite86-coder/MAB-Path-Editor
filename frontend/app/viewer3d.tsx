@@ -31,6 +31,25 @@ export default function Viewer3D() {
   const [material, setMaterial] = useState('steel');
   const [engineeringData, setEngineeringData] = useState<any>(null);
   const sceneRunIdRef = useRef(0);
+  const viewStateRef = useRef({
+    centerX: 0,
+    centerY: 0,
+    centerZ: 0,
+    distance: 420,
+    yaw: Math.PI / 4,
+    pitch: 0.45,
+    autoRotate: true,
+    ready: false,
+  });
+  const defaultViewStateRef = useRef({
+    centerX: 0,
+    centerY: 0,
+    centerZ: 0,
+    distance: 420,
+    yaw: Math.PI / 4,
+    pitch: 0.45,
+  });
+  const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
 
   const getFallbackDepth = (els: CADElement[], preferredDepth?: number) => {
     const depthFromElements = els.find((element) => {
@@ -160,6 +179,42 @@ export default function Viewer3D() {
   const handleRecalculate = () => {
     const depth = resolvedDepth;
     calculateEngineering(elements, depth, material);
+  };
+
+  const adjustOrbit = (yawDelta: number, pitchDelta: number) => {
+    viewStateRef.current.autoRotate = false;
+    setAutoRotateEnabled(false);
+    viewStateRef.current.yaw += yawDelta;
+    viewStateRef.current.pitch = Math.max(-1.1, Math.min(1.1, viewStateRef.current.pitch + pitchDelta));
+  };
+
+  const adjustPan = (xDelta: number, zDelta: number) => {
+    viewStateRef.current.autoRotate = false;
+    setAutoRotateEnabled(false);
+    viewStateRef.current.centerX += xDelta;
+    viewStateRef.current.centerZ += zDelta;
+  };
+
+  const adjustZoom = (multiplier: number) => {
+    viewStateRef.current.autoRotate = false;
+    setAutoRotateEnabled(false);
+    viewStateRef.current.distance = Math.max(40, Math.min(2500, viewStateRef.current.distance * multiplier));
+  };
+
+  const toggleAutoRotate = () => {
+    const nextValue = !viewStateRef.current.autoRotate;
+    viewStateRef.current.autoRotate = nextValue;
+    setAutoRotateEnabled(nextValue);
+  };
+
+  const resetView = () => {
+    viewStateRef.current = {
+      ...viewStateRef.current,
+      ...defaultViewStateRef.current,
+      autoRotate: true,
+      ready: true,
+    };
+    setAutoRotateEnabled(true);
   };
 
   const onContextCreate = async (gl: any) => {
@@ -377,10 +432,24 @@ export default function Viewer3D() {
 
       gridHelper.position.set(center.x, boundingBox.min.y - 20, center.z);
       axesHelper.position.copy(center);
+
+      const defaultDistance = fitDistance * 1.15;
+      defaultViewStateRef.current = {
+        centerX: center.x,
+        centerY: center.y,
+        centerZ: center.z,
+        distance: defaultDistance,
+        yaw: Math.PI / 4,
+        pitch: 0.45,
+      };
+      viewStateRef.current = {
+        ...defaultViewStateRef.current,
+        autoRotate: autoRotateEnabled,
+        ready: true,
+      };
     }
 
     // Animation loop
-    let rotationY = 0;
     const render = () => {
       if (sceneRunIdRef.current !== currentSceneRunId) {
         return;
@@ -388,9 +457,24 @@ export default function Viewer3D() {
 
       requestAnimationFrame(render);
 
-      // Rotate scene around Y axis (vertical rotation)
-      rotationY += 0.01;
-      scene.rotation.y = rotationY;
+      if (viewStateRef.current.ready) {
+        if (viewStateRef.current.autoRotate) {
+          viewStateRef.current.yaw += 0.01;
+        }
+
+        const orbitRadius = Math.cos(viewStateRef.current.pitch) * viewStateRef.current.distance;
+        const cameraX = viewStateRef.current.centerX + orbitRadius * Math.cos(viewStateRef.current.yaw);
+        const cameraY = viewStateRef.current.centerY + Math.sin(viewStateRef.current.pitch) * viewStateRef.current.distance;
+        const cameraZ = viewStateRef.current.centerZ + orbitRadius * Math.sin(viewStateRef.current.yaw);
+
+        camera.position.set(cameraX, cameraY, cameraZ);
+        camera.lookAt(viewStateRef.current.centerX, viewStateRef.current.centerY, viewStateRef.current.centerZ);
+        directionalLight.position.set(
+          cameraX + viewStateRef.current.distance * 0.2,
+          cameraY + viewStateRef.current.distance * 0.25,
+          cameraZ + viewStateRef.current.distance * 0.2
+        );
+      }
 
       renderer.render(scene, camera);
       gl.endFrameEXP();
@@ -481,6 +565,52 @@ export default function Viewer3D() {
               <Ionicons name="refresh" size={20} color="#fff" />
               <Text style={styles.recalcText}>Update</Text>
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.navigationRow}>
+            <Text style={styles.controlLabel}>View Controls</Text>
+            <View style={styles.navigationButtons}>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustOrbit(-0.25, 0)} testID="viewer3d-orbit-left-button">
+                <Ionicons name="arrow-back" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustOrbit(0.25, 0)} testID="viewer3d-orbit-right-button">
+                <Ionicons name="arrow-forward" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustOrbit(0, 0.18)} testID="viewer3d-orbit-up-button">
+                <Ionicons name="arrow-up" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustOrbit(0, -0.18)} testID="viewer3d-orbit-down-button">
+                <Ionicons name="arrow-down" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustPan(-20, 0)} testID="viewer3d-pan-left-button">
+                <Ionicons name="caret-back" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustPan(20, 0)} testID="viewer3d-pan-right-button">
+                <Ionicons name="caret-forward" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustPan(0, -20)} testID="viewer3d-pan-up-button">
+                <Ionicons name="caret-up" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustPan(0, 20)} testID="viewer3d-pan-down-button">
+                <Ionicons name="caret-down" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustZoom(0.88)} testID="viewer3d-zoom-in-button">
+                <Ionicons name="add" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => adjustZoom(1.14)} testID="viewer3d-zoom-out-button">
+                <Ionicons name="remove" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.navButton, autoRotateEnabled && styles.navButtonActive]}
+                onPress={toggleAutoRotate}
+                testID="viewer3d-auto-rotate-button"
+              >
+                <Ionicons name="sync" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={resetView} testID="viewer3d-reset-view-button">
+                <Ionicons name="refresh" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -579,7 +709,7 @@ export default function Viewer3D() {
 
       <View style={styles.info}>
         <Ionicons name="information-circle" size={16} color="#666" />
-        <Text style={styles.infoText} testID="viewer3d-info-text">Rotating automatically. Pinch to zoom.</Text>
+        <Text style={styles.infoText} testID="viewer3d-info-text">Use orbit, pan, zoom, and reset controls for a FreeCAD-style view workflow.</Text>
       </View>
     </SafeAreaView>
   );
@@ -630,6 +760,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  navigationRow: {
+    marginTop: 14,
+  },
+  navigationButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  navButton: {
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1,
+    borderColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
   },
   controlGroup: {
     marginRight: 16,

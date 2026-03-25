@@ -18,6 +18,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import CADCanvas from '../components/CADCanvas';
+import { FeatureTreePanel } from '../components/FeatureTreePanel';
+import { FeaturePropertySheet } from '../components/FeaturePropertySheet';
+import {
+  FreeCADFeature,
+  FreeCADFeatureParams,
+  FreeCADFeatureType,
+  buildElementsFromFeatures,
+  createFeature,
+} from '../utils/freecadWorkflow';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -35,6 +44,9 @@ export default function Canvas() {
   const router = useRouter();
 
   const [elements, setElements] = useState<CADElement[]>([]);
+  const [freecadFeatures, setFreecadFeatures] = useState<FreeCADFeature[]>([]);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
+  const [showFeatureSheet, setShowFeatureSheet] = useState(false);
   const [activeTool, setActiveTool] = useState('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [activeStrokeWidth, setActiveStrokeWidth] = useState(2);
@@ -79,6 +91,73 @@ export default function Canvas() {
     }));
   };
 
+  const syncFeatureElements = (nextFeatures: FreeCADFeature[]) => {
+    const featureElements = buildElementsFromFeatures(nextFeatures) as CADElement[];
+    setElements((currentElements) => {
+      const manualElements = currentElements.filter((element) => !element.properties?.featureId);
+      return [...manualElements, ...featureElements];
+    });
+  };
+
+  const handleAddFreecadFeature = (type: FreeCADFeatureType) => {
+    const nextFeature = createFeature(type, freecadFeatures.length);
+    const nextFeatures = [...freecadFeatures, nextFeature];
+    setFreecadFeatures(nextFeatures);
+    syncFeatureElements(nextFeatures);
+    setSelectedFeatureId(nextFeature.id);
+    setSelectedElementId(`feature-element-${nextFeature.id}`);
+    setShowFeatureSheet(true);
+    setActiveTool('select');
+  };
+
+  const handleSelectFreecadFeature = (featureId: string) => {
+    setSelectedFeatureId(featureId);
+    setSelectedElementId(`feature-element-${featureId}`);
+    setShowFeatureSheet(true);
+    setActiveTool('select');
+  };
+
+  const handleUpdateFeature = (featureId: string, updates: Partial<FreeCADFeature>) => {
+    const nextFeatures = freecadFeatures.map((feature) =>
+      feature.id === featureId ? { ...feature, ...updates } : feature
+    );
+    setFreecadFeatures(nextFeatures);
+    syncFeatureElements(nextFeatures);
+  };
+
+  const handleUpdateFeatureParam = (
+    featureId: string,
+    param: keyof FreeCADFeatureParams,
+    value: string
+  ) => {
+    const nextFeatures = freecadFeatures.map((feature) => {
+      if (feature.id !== featureId) {
+        return feature;
+      }
+
+      const parsedValue = Number(value);
+      return {
+        ...feature,
+        params: {
+          ...feature.params,
+          [param]: Number.isFinite(parsedValue) ? parsedValue : feature.params[param],
+        },
+      };
+    });
+
+    setFreecadFeatures(nextFeatures);
+    syncFeatureElements(nextFeatures);
+  };
+
+  const handleRemoveFeature = (featureId: string) => {
+    const nextFeatures = freecadFeatures.filter((feature) => feature.id !== featureId);
+    setFreecadFeatures(nextFeatures);
+    syncFeatureElements(nextFeatures);
+    setSelectedFeatureId(null);
+    setSelectedElementId(null);
+    setShowFeatureSheet(false);
+  };
+
   useEffect(() => {
     if (mode === 'text') {
       setAiMode('text');
@@ -118,6 +197,9 @@ export default function Canvas() {
       const data = await response.json();
       const normalizedElements = normalizeElements(data.elements);
       setElements(normalizedElements);
+      setFreecadFeatures([]);
+      setSelectedFeatureId(null);
+      setShowFeatureSheet(false);
       setActiveTool('select');
       setShowAIModal(false);
       setTextPrompt('');
@@ -183,6 +265,9 @@ export default function Canvas() {
       const data = await response.json();
       const normalizedElements = normalizeElements(data.elements);
       setElements(normalizedElements);
+      setFreecadFeatures([]);
+      setSelectedFeatureId(null);
+      setShowFeatureSheet(false);
       setActiveTool('select');
       setShowAIModal(false);
       setSelectedImage(null);
@@ -254,6 +339,9 @@ export default function Canvas() {
       Alert.alert('No Selection', 'Please select an element first');
       return;
     }
+
+    const selectedElement = elements.find((element) => element.id === selectedElementId);
+    const featureId = selectedElement?.properties?.featureId;
     
     Alert.alert(
       'Delete Element',
@@ -264,6 +352,10 @@ export default function Canvas() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
+            if (featureId) {
+              handleRemoveFeature(featureId);
+              return;
+            }
             setElements(elements.filter(el => el.id !== selectedElementId));
             setSelectedElementId(null);
           },
@@ -280,6 +372,9 @@ export default function Canvas() {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Clear', style: 'destructive', onPress: () => {
           setElements([]);
+          setFreecadFeatures([]);
+          setSelectedFeatureId(null);
+          setShowFeatureSheet(false);
           setSelectedElementId(null);
         }},
       ]
@@ -394,6 +489,24 @@ export default function Canvas() {
       </View>
 
       <ScrollView style={styles.controlsContainer} contentContainerStyle={styles.controlsContent}>
+
+        <View style={styles.workflowIntroCard} testID="freecad-workflow-intro-card">
+          <Text style={styles.workflowIntroLabel}>MOBILE FREECAD-STYLE MVP</Text>
+          <Text style={styles.workflowIntroTitle}>Sketch → Features → Properties → 3D</Text>
+          <Text style={styles.workflowIntroText}>
+            1. Add a Pad or Base Wall from the feature tree.{"\n"}
+            2. Tap a feature row to edit exact dimensions.{"\n"}
+            3. Add Flanges or Hems, then open 3D.{"\n"}
+            4. Use the regular drawing tools for quick freeform edits.
+          </Text>
+        </View>
+
+        <FeatureTreePanel
+          features={freecadFeatures}
+          selectedFeatureId={selectedFeatureId}
+          onSelectFeature={handleSelectFreecadFeature}
+          onAddFeature={handleAddFreecadFeature}
+        />
 
         <Text style={styles.sectionTitle}>Drawing Tools</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolsScroll}>
@@ -758,6 +871,15 @@ export default function Canvas() {
           </View>
         </View>
       </Modal>
+
+      <FeaturePropertySheet
+        feature={freecadFeatures.find((feature) => feature.id === selectedFeatureId) || null}
+        visible={showFeatureSheet}
+        onClose={() => setShowFeatureSheet(false)}
+        onUpdateFeature={handleUpdateFeature}
+        onUpdateParam={handleUpdateFeatureParam}
+        onRemoveFeature={handleRemoveFeature}
+      />
     </SafeAreaView>
   );
 }
@@ -802,6 +924,32 @@ const styles = StyleSheet.create({
   controlsContent: {
     padding: 16,
     paddingTop: 8,
+  },
+  workflowIntroCard: {
+    backgroundColor: '#111115',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 12,
+  },
+  workflowIntroLabel: {
+    color: '#7E7E87',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    marginBottom: 6,
+  },
+  workflowIntroTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  workflowIntroText: {
+    color: '#A1A1A6',
+    fontSize: 13,
+    lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 18,
