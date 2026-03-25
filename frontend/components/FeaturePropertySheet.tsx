@@ -13,6 +13,9 @@ import {
   FeatureAttachmentEdge,
   FreeCADFeature,
   FreeCADFeatureParams,
+  FreeCADFeatureType,
+  getFeatureFieldLabel,
+  getFeatureFieldVisibility,
   MeasurementUnit,
   formatMeasurement,
 } from '../utils/freecadWorkflow';
@@ -29,15 +32,8 @@ interface FeaturePropertySheetProps {
   unitSystem: MeasurementUnit;
 }
 
-const FIELDS: { key: keyof FreeCADFeatureParams; label: string }[] = [
-  { key: 'length', label: 'Length (mm)' },
-  { key: 'width', label: 'Width (mm)' },
-  { key: 'height', label: 'Height (mm)' },
-  { key: 'thickness', label: 'Thickness (mm)' },
-  { key: 'offsetX', label: 'Offset X (mm)' },
-  { key: 'offsetZ', label: 'Offset Z (mm)' },
-  { key: 'rotationY', label: 'Rotation Y (deg)' },
-];
+const supportsAttachment = (type: FreeCADFeatureType) => ['flange', 'hem', 'pocket', 'chamfer', 'fillet', 'mirror'].includes(type);
+const supportsBendAngle = (type: FreeCADFeatureType) => ['flange', 'hem'].includes(type);
 
 export const FeaturePropertySheet = ({
   feature,
@@ -83,7 +79,7 @@ export const FeaturePropertySheet = ({
                 </TouchableOpacity>
               </View>
 
-              {(feature.type === 'flange' || feature.type === 'hem') && (
+              {supportsAttachment(feature.type) && (
                 <>
                   <View style={styles.row}>
                     <Text style={styles.fieldLabel}>Attached To</Text>
@@ -106,35 +102,37 @@ export const FeaturePropertySheet = ({
                     </View>
                   </View>
 
-                  <View style={styles.row}>
-                    <Text style={styles.fieldLabel}>Bend Angle (deg)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={String(feature.bendAngle)}
-                      onChangeText={(value) => {
-                        const numericValue = Number(value);
-                        if (Number.isFinite(numericValue)) {
-                          onUpdateFeature(feature.id, { bendAngle: numericValue });
-                        }
-                      }}
-                      keyboardType="numeric"
-                      placeholderTextColor="#666"
-                      testID="freecad-bend-angle-input"
-                    />
-                  </View>
+                  {supportsBendAngle(feature.type) && (
+                    <View style={styles.row}>
+                      <Text style={styles.fieldLabel}>Bend Angle (deg)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={String(feature.bendAngle)}
+                        onChangeText={(value) => {
+                          const numericValue = Number(value);
+                          if (Number.isFinite(numericValue)) {
+                            onUpdateFeature(feature.id, { bendAngle: numericValue });
+                          }
+                        }}
+                        keyboardType="numeric"
+                        placeholderTextColor="#666"
+                        testID="freecad-bend-angle-input"
+                      />
+                    </View>
+                  )}
                 </>
               )}
 
-              {FIELDS.map((field) => (
-                <View key={field.key} style={styles.row}>
-                  <Text style={styles.fieldLabel}>{field.label.replace('(mm)', `(${unitSystem})`)}</Text>
+              {getFeatureFieldVisibility(feature.type).map((field) => (
+                <View key={field} style={styles.row}>
+                  <Text style={styles.fieldLabel}>{getFeatureFieldLabel(feature.type, field).replace('(mm)', `(${unitSystem})`)}</Text>
                   <TextInput
                     style={styles.input}
-                    value={formatMeasurement(feature.params[field.key], unitSystem)}
-                    onChangeText={(value) => onUpdateParam(feature.id, field.key, value)}
+                    value={formatMeasurement(feature.params[field], unitSystem)}
+                    onChangeText={(value) => onUpdateParam(feature.id, field, value)}
                     keyboardType="numeric"
                     placeholderTextColor="#666"
-                    testID={`freecad-property-${field.key}-input`}
+                    testID={`freecad-property-${field}-input`}
                   />
                 </View>
               ))}

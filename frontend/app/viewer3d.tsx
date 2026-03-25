@@ -141,6 +141,22 @@ export default function Viewer3D() {
       if (threeD?.shape === 'box') {
         totalArea += 2 * (threeD.width * threeD.height + threeD.width * threeD.depth + threeD.height * threeD.depth);
         totalVolumeMM3 += threeD.width * threeD.height * threeD.depth;
+      } else if (threeD?.shape === 'profileExtrude') {
+        const polygonArea = (points: number[][]) => {
+          let area = 0;
+          for (let index = 0; index < points.length; index += 1) {
+            const [x1, y1] = points[index];
+            const [x2, y2] = points[(index + 1) % points.length];
+            area += x1 * y2 - x2 * y1;
+          }
+          return Math.abs(area) / 2;
+        };
+
+        const outerArea = polygonArea(threeD.outlinePoints || []);
+        const holeArea = (threeD.holes || []).reduce((sum: number, hole: number[][]) => sum + polygonArea(hole), 0);
+        const baseArea = Math.max(outerArea - holeArea, 0);
+        totalArea += baseArea * 2;
+        totalVolumeMM3 += baseArea * threeD.height;
       } else if (threeD?.shape === 'panelLine' && el.points.length >= 2) {
         const x1 = el.points[0][0];
         const y1 = el.points[0][1];
@@ -312,6 +328,51 @@ export default function Viewer3D() {
 
         if (solid3D?.shape === 'box') {
           const geometry = new THREE.BoxGeometry(solid3D.width, solid3D.height, solid3D.depth);
+          const mesh = new THREE.Mesh(geometry, meshMaterial);
+          mesh.position.set(solid3D.x || 0, solid3D.y || 0, solid3D.z || 0);
+          mesh.rotation.set(
+            ((solid3D.rotationX || 0) * Math.PI) / 180,
+            ((solid3D.rotationY || 0) * Math.PI) / 180,
+            ((solid3D.rotationZ || 0) * Math.PI) / 180
+          );
+          modelGroup.add(mesh);
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
+          );
+          line.position.copy(mesh.position);
+          line.rotation.copy(mesh.rotation);
+          modelGroup.add(line);
+          return;
+        }
+
+        if (solid3D?.shape === 'profileExtrude') {
+          const shape = new THREE.Shape();
+          const outlinePoints = solid3D.outlinePoints || [];
+          if (outlinePoints.length >= 3) {
+            shape.moveTo(outlinePoints[0][0], outlinePoints[0][1]);
+            outlinePoints.slice(1).forEach((point: number[]) => shape.lineTo(point[0], point[1]));
+            shape.lineTo(outlinePoints[0][0], outlinePoints[0][1]);
+          }
+
+          (solid3D.holes || []).forEach((holePoints: number[][]) => {
+            if (holePoints.length < 3) return;
+            const holePath = new THREE.Path();
+            holePath.moveTo(holePoints[0][0], holePoints[0][1]);
+            holePoints.slice(1).forEach((point: number[]) => holePath.lineTo(point[0], point[1]));
+            holePath.lineTo(holePoints[0][0], holePoints[0][1]);
+            shape.holes.push(holePath);
+          });
+
+          const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: solid3D.height,
+            bevelEnabled: false,
+          });
+          geometry.rotateX(-Math.PI / 2);
+          geometry.center();
+
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set(solid3D.x || 0, solid3D.y || 0, solid3D.z || 0);
           mesh.rotation.set(

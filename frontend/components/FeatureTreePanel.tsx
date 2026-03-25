@@ -15,6 +15,10 @@ const QUICK_ACTIONS: { type: FreeCADFeatureType; label: string; icon: string }[]
   { type: 'baseWall', label: 'Base Wall', icon: 'remove' },
   { type: 'flange', label: 'Flange', icon: 'layers' },
   { type: 'hem', label: 'Hem', icon: 'return-up-forward' },
+  { type: 'pocket', label: 'Pocket', icon: 'cut' },
+  { type: 'chamfer', label: 'Chamfer', icon: 'git-merge' },
+  { type: 'fillet', label: 'Fillet', icon: 'ellipse' },
+  { type: 'mirror', label: 'Mirror', icon: 'copy' },
 ];
 
 export const FeatureTreePanel = ({
@@ -44,7 +48,7 @@ export const FeatureTreePanel = ({
 
       {features.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Start with Pad or Base Wall, then add Flanges and Hems.</Text>
+          <Text style={styles.emptyText}>Start with Pad or Base Wall, then add Flanges, Hems, Pockets, Chamfers, Fillets, and Mirrors.</Text>
         </View>
       ) : (
         <View style={styles.list}>

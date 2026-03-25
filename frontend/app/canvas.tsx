@@ -297,10 +297,28 @@ export default function Canvas() {
     );
   };
 
+  const resolveFeatureAttachmentTarget = (featureId: string | null): string | null => {
+    if (!featureId) {
+      return null;
+    }
+
+    const featureMap = freecadFeatures.reduce<Record<string, FreeCADFeature>>((accumulator, feature) => {
+      accumulator[feature.id] = feature;
+      return accumulator;
+    }, {});
+
+    let currentFeature = featureMap[featureId];
+    while (currentFeature && ['pocket', 'chamfer', 'fillet', 'mirror'].includes(currentFeature.type) && currentFeature.attachedTo) {
+      currentFeature = featureMap[currentFeature.attachedTo];
+    }
+
+    return currentFeature?.id || featureId;
+  };
+
   const handleAddFreecadFeature = (type: FreeCADFeatureType) => {
     const nextFeature = createFeature(type, freecadFeatures.length);
-    if ((type === 'flange' || type === 'hem') && selectedFeatureId) {
-      nextFeature.attachedTo = selectedFeatureId;
+    if ((type === 'flange' || type === 'hem' || type === 'pocket' || type === 'chamfer' || type === 'fillet' || type === 'mirror') && selectedFeatureId) {
+      nextFeature.attachedTo = resolveFeatureAttachmentTarget(selectedFeatureId);
     }
     const nextFeatures = [...freecadFeatures, nextFeature];
     setFreecadFeatures(nextFeatures);
@@ -538,17 +556,17 @@ export default function Canvas() {
   };
 
   const handleDelete = () => {
-    if (!selectedElementId) {
+    if (!selectedElementId && !selectedFeatureId) {
       Alert.alert('No Selection', 'Please select an element first');
       return;
     }
 
     const selectedElement = elements.find((element) => element.id === selectedElementId);
-    const featureId = selectedElement?.properties?.featureId;
+    const featureId = selectedElement?.properties?.featureId || selectedFeatureId;
     
     Alert.alert(
       'Delete Element',
-      'Are you sure you want to delete this element?',
+      featureId ? 'Are you sure you want to delete this feature?' : 'Are you sure you want to delete this element?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
