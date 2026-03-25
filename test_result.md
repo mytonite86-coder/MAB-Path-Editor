@@ -352,6 +352,21 @@ frontend:
         agent: "main"
         comment: "Added orbit, pan, zoom, auto-rotate toggle, and reset-view buttons for a more FreeCAD-like mobile viewing workflow. Self-tested from feature-driven geometry into the 3D viewer."
 
+  - task: "Measurement Units (mm/in)"
+    implemented: true
+    working: true
+    file: "app/canvas.tsx, app/viewer3d.tsx, components/FeaturePropertySheet.tsx, utils/freecadWorkflow.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added mm/in toggles for the canvas workflow and 3D viewer. Feature properties, panel settings, and depth inputs now convert between inches and millimeters while preserving internal geometry in mm."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Canvas mm/in toggle, inch-based property editing, route-to-3D flow, viewer unit toggle, and legacy manual panel conversion all passed on mobile viewport."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true
