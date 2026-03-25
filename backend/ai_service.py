@@ -24,6 +24,9 @@ class AICADService:
             "mm": 1.0,
             "cm": 10.0,
             "m": 1000.0,
+            "in": 25.4,
+            "inch": 25.4,
+            "inches": 25.4,
         }
         return numeric_value * scale.get((unit or "mm").lower(), 1.0)
 
@@ -88,6 +91,221 @@ class AICADService:
                 }
             ],
             "description": description,
+            "generation_id": str(uuid.uuid4()),
+        }
+
+    def _line_with_three_d(
+        self,
+        start: List[float],
+        end: List[float],
+        label: str,
+        three_d: Dict[str, Any],
+        color: str = "#000000",
+    ) -> Dict[str, Any]:
+        return {
+            "type": "line",
+            "points": [start, end],
+            "properties": {
+                "color": color,
+                "strokeWidth": 2,
+                "depth": max(float(three_d.get("depth", 3)), 1),
+                "label": label,
+                "threeD": three_d,
+            },
+        }
+
+    def _build_sheet_metal_channel_from_prompt(self, prompt: str) -> Optional[Dict[str, Any]]:
+        normalized_prompt = prompt.lower().replace('"', ' inch ').replace("×", "x")
+
+        if not all(keyword in normalized_prompt for keyword in ["3 sides", "wall", "hem"]):
+            return None
+
+        height_match = re.search(r"all\s+3\s+are\s+(\d+(?:\.\d+)?)\s*in(?:ch|ches)?\s+tall", normalized_prompt)
+        slope_match = re.search(r"extended\s+(\d+(?:\.\d+)?)\s*in(?:ch|ches)?\s+45", normalized_prompt)
+        left_match = re.search(r"left\s+wall\s+is\s+(\d+(?:\.\d+)?)\s*in(?:ch|ches)?", normalized_prompt)
+        back_match = re.search(r"back\s+wall\s+is\s+(\d+(?:\.\d+)?)\s*in(?:ch|ches)?", normalized_prompt)
+        hem_match = re.search(r"(\d+(?:\.\d+)?)\s*in(?:ch|ches)?\s+folded\s+backwards\s+hem", normalized_prompt)
+        radius_match = re.search(r"@\s*(\d+(?:\.\d+)?)\s*in(?:ch|ches)?\s+diameter", normalized_prompt)
+        right_matches = re.findall(r"(?:and|a)\s+(\d+(?:\.\d+)?)\s*in(?:ch|ches)?\s+wall", normalized_prompt)
+
+        if not all([height_match, slope_match, left_match, back_match, hem_match]) or not right_matches:
+            return None
+
+        wall_height = self._to_millimeters(height_match.group(1), "in")
+        slope_depth = self._to_millimeters(slope_match.group(1), "in")
+        left_length = self._to_millimeters(left_match.group(1), "in")
+        back_length = self._to_millimeters(back_match.group(1), "in")
+        right_length = self._to_millimeters(right_matches[-1], "in")
+        hem_size = self._to_millimeters(hem_match.group(1), "in")
+        bend_radius = self._to_millimeters(radius_match.group(1), "in") / 2 if radius_match else 6.35
+
+        sheet_thickness = 3.0
+        half_back = back_length / 2
+        left_side_center_z = left_length / 2
+        right_side_center_z = right_length / 2
+        wall_center_y = wall_height / 2
+        slope_center_y = max(sheet_thickness * 2, wall_height * 0.18)
+        top_hem_y = wall_height + sheet_thickness / 2
+
+        elements = [
+            self._line_with_three_d(
+                [130, 128],
+                [668, 170],
+                "back wall top edge",
+                {
+                    "shape": "box",
+                    "width": back_length,
+                    "height": wall_height,
+                    "depth": sheet_thickness,
+                    "x": 0,
+                    "y": wall_center_y,
+                    "z": 0,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [130, 128],
+                [92, 258],
+                "left wall outer edge",
+                {
+                    "shape": "box",
+                    "width": sheet_thickness,
+                    "height": wall_height,
+                    "depth": left_length,
+                    "x": -half_back,
+                    "y": wall_center_y,
+                    "z": left_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [668, 170],
+                [660, 312],
+                "right wall outer edge",
+                {
+                    "shape": "box",
+                    "width": sheet_thickness,
+                    "height": wall_height,
+                    "depth": right_length,
+                    "x": half_back,
+                    "y": wall_center_y,
+                    "z": right_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [108, 255],
+                [248, 212],
+                "left 45 degree return",
+                {
+                    "shape": "box",
+                    "width": slope_depth,
+                    "height": sheet_thickness,
+                    "depth": max(left_length - bend_radius, sheet_thickness * 2),
+                    "x": -half_back + (slope_depth / 2),
+                    "y": slope_center_y,
+                    "z": left_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": -45,
+                },
+            ),
+            self._line_with_three_d(
+                [248, 212],
+                [560, 236],
+                "back 45 degree return",
+                {
+                    "shape": "box",
+                    "width": max(back_length - (bend_radius * 2), sheet_thickness * 2),
+                    "height": sheet_thickness,
+                    "depth": slope_depth,
+                    "x": 0,
+                    "y": slope_center_y,
+                    "z": slope_depth / 2,
+                    "rotationX": -45,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [560, 236],
+                [640, 192],
+                "right 45 degree return",
+                {
+                    "shape": "box",
+                    "width": slope_depth,
+                    "height": sheet_thickness,
+                    "depth": max(right_length - bend_radius, sheet_thickness * 2),
+                    "x": half_back - (slope_depth / 2),
+                    "y": slope_center_y,
+                    "z": right_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 45,
+                },
+            ),
+            self._line_with_three_d(
+                [132, 128],
+                [150, 98],
+                "left top hem",
+                {
+                    "shape": "box",
+                    "width": hem_size,
+                    "height": sheet_thickness,
+                    "depth": left_length,
+                    "x": -half_back - (hem_size / 2),
+                    "y": top_hem_y,
+                    "z": left_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [150, 98],
+                [612, 132],
+                "back top hem",
+                {
+                    "shape": "box",
+                    "width": back_length,
+                    "height": sheet_thickness,
+                    "depth": hem_size,
+                    "x": 0,
+                    "y": top_hem_y,
+                    "z": -hem_size / 2,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+            self._line_with_three_d(
+                [612, 132],
+                [686, 112],
+                "right top hem",
+                {
+                    "shape": "box",
+                    "width": hem_size,
+                    "height": sheet_thickness,
+                    "depth": right_length,
+                    "x": half_back + (hem_size / 2),
+                    "y": top_hem_y,
+                    "z": right_side_center_z,
+                    "rotationX": 0,
+                    "rotationY": 0,
+                    "rotationZ": 0,
+                },
+            ),
+        ]
+
+        return {
+            "elements": elements,
+            "description": "3-sided sheet-metal channel with angled returns and folded top hems",
             "generation_id": str(uuid.uuid4()),
         }
 
@@ -226,6 +444,10 @@ Return valid JSON only. No markdown. No explanation."""
         primitive_result = self._build_primitive_from_prompt(prompt)
         if primitive_result:
             return primitive_result
+
+        sheet_metal_result = self._build_sheet_metal_channel_from_prompt(prompt)
+        if sheet_metal_result:
+            return sheet_metal_result
 
         if not self.api_key:
             raise RuntimeError("EMERGENT_LLM_KEY is not configured")

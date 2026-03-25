@@ -87,18 +87,26 @@ export default function Viewer3D() {
 
     // Calculate total volume (simplified)
     let totalArea = 0;
+    let totalVolumeMM3 = 0;
     els.forEach((el) => {
-      if (el.type === 'rectangle' && el.points.length >= 2) {
+      const threeD = el.properties?.threeD;
+
+      if (threeD?.shape === 'box') {
+        totalArea += 2 * (threeD.width * threeD.height + threeD.width * threeD.depth + threeD.height * threeD.depth);
+        totalVolumeMM3 += threeD.width * threeD.height * threeD.depth;
+      } else if (el.type === 'rectangle' && el.points.length >= 2) {
         const width = Math.abs(el.points[1][0] - el.points[0][0]);
         const height = Math.abs(el.points[1][1] - el.points[0][1]);
         totalArea += width * height;
+        totalVolumeMM3 += width * height * depth;
       } else if (el.type === 'circle' && el.properties.radius) {
         totalArea += Math.PI * el.properties.radius * el.properties.radius;
+        totalVolumeMM3 += Math.PI * el.properties.radius * el.properties.radius * depth;
       }
     });
 
     // Scale factor: canvas units to mm (assuming 1 canvas unit = 1mm)
-    const volumeMM3 = totalArea * depth;
+    const volumeMM3 = totalVolumeMM3 || totalArea * depth;
     const volumeM3 = volumeMM3 / 1000000000; // Convert mm³ to m³
 
     // Calculate mass
@@ -207,6 +215,30 @@ export default function Viewer3D() {
     elements.forEach((element, index) => {
       console.log(`3D Viewer - Processing element ${index}:`, element.type, element.points);
       try {
+        const solid3D = element.properties?.threeD;
+
+        if (solid3D?.shape === 'box') {
+          const geometry = new THREE.BoxGeometry(solid3D.width, solid3D.height, solid3D.depth);
+          const mesh = new THREE.Mesh(geometry, meshMaterial);
+          mesh.position.set(solid3D.x || 0, solid3D.y || 0, solid3D.z || 0);
+          mesh.rotation.set(
+            ((solid3D.rotationX || 0) * Math.PI) / 180,
+            ((solid3D.rotationY || 0) * Math.PI) / 180,
+            ((solid3D.rotationZ || 0) * Math.PI) / 180
+          );
+          modelGroup.add(mesh);
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
+          );
+          line.position.copy(mesh.position);
+          line.rotation.copy(mesh.rotation);
+          modelGroup.add(line);
+          return;
+        }
+
         // Get depth from element properties, fallback to global depth setting
         const elementDepth = element.properties?.depth || depth;
         
