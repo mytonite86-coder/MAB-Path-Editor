@@ -322,6 +322,36 @@ frontend:
         agent: "main"
         comment: "Increased line hit tolerance and improved panel line selection width. Self-tested selection in preview; selecting a drawn panel line now shows the delete action reliably."
 
+  - task: "FreeCAD-Style Mobile Workflow MVP"
+    implemented: true
+    working: true
+    file: "app/canvas.tsx, components/FeatureTreePanel.tsx, components/FeaturePropertySheet.tsx, utils/freecadWorkflow.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added workflow intro card, FreeCAD-style feature tree/history, parametric feature creation (Pad/Base Wall/Flange/Hem), and a property sheet for numeric edits. Self-tested: add features, edit values, and route generated geometry into 3D."
+      - working: false
+        agent: "testing"
+        comment: "Testing agent found the property sheet close button could become unreachable on 375x667 mobile viewport."
+      - working: true
+        agent: "main"
+        comment: "Fixed the property sheet layout so the close action stays visible/tappable on small mobile viewports. Self-retested on 375x667 and confirmed normal close interaction."
+
+  - task: "3D Viewer Navigation Controls"
+    implemented: true
+    working: true
+    file: "app/viewer3d.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added orbit, pan, zoom, auto-rotate toggle, and reset-view buttons for a more FreeCAD-like mobile viewing workflow. Self-tested from feature-driven geometry into the 3D viewer."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true

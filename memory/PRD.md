@@ -33,6 +33,10 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Added **Convert Lines to Panels** so an existing manual line sketch can be turned into panel-style 3D geometry
 - 3D viewer now understands manual `panelLine` geometry and renders those draft lines as vertical panels instead of wire-frame beams
 - Selection hit-testing for lines/panels is more forgiving, improving select/delete reliability in preview
+- Added a **mobile FreeCAD-style MVP workflow** on the canvas: workflow intro, feature tree/history panel, feature creation actions (Pad/Base Wall/Flange/Hem), and a property bottom sheet for numeric editing
+- Feature-driven geometry now syncs into the canvas and 3D viewer without breaking existing manual drawing tools
+- Added **3D view controls** for orbit, pan, zoom, auto-rotate toggle, and reset view
+- Fixed the FreeCAD property sheet so the close control stays reachable on small mobile screens
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`
@@ -47,6 +51,7 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Validate real-device user flow for text-to-3D on the user’s own prompts/sketches
 - Improve Image-to-CAD quality specifically for rough hand drawings
 - Add direct fold-aware manual drafting tools (bend/flange/hem editing instead of only panel-edge drafting)
+- Add sketch constraints/dimensions and feature relations/attachments to deepen FreeCAD-style parametric behavior
 - Continue breaking down oversized `frontend/app/canvas.tsx` into smaller components
 
 ### P1

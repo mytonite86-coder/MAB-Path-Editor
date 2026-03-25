@@ -47,13 +47,17 @@ export const FeaturePropertySheet = ({
               <Text style={styles.headerLabel}>PROPERTIES</Text>
               <Text style={styles.title}>{feature?.name || 'Feature'}</Text>
             </View>
-            <TouchableOpacity onPress={onClose} testID="freecad-close-properties-button">
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeButton}
+              testID="freecad-close-properties-button"
+            >
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
 
           {feature && (
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               <View style={styles.row}>
                 <Text style={styles.fieldLabel}>Enabled</Text>
                 <TouchableOpacity
@@ -100,19 +104,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'flex-end',
+    paddingTop: 24,
   },
   sheet: {
     backgroundColor: '#151518',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '72%',
+    paddingTop: 58,
+    maxHeight: '82%',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+    paddingRight: 48,
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 0,
+    top: -4,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerLabel: {
     color: '#7E7E87',
@@ -125,6 +141,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: '700',
+  },
+  scrollContent: {
+    paddingBottom: 24,
   },
   row: {
     paddingVertical: 12,
