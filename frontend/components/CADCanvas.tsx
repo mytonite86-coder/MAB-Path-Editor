@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Dimensions, Text } from 'react-native';
 import Svg, { Line, Rect, Circle, Polygon, Text as SvgText, G } from 'react-native-svg';
+import { MeasurementUnit, formatMeasurement } from '../utils/freecadWorkflow';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CANVAS_WIDTH = SCREEN_WIDTH - 32;
@@ -22,6 +23,7 @@ interface CADCanvasProps {
   activeDepth?: number;
   panelHeight?: number;
   sheetThickness?: number;
+  unitSystem?: MeasurementUnit;
   backgroundColor?: 'dark' | 'light';
   selectedElementId?: string | null;
   onElementSelect?: (id: string | null) => void;
@@ -37,6 +39,7 @@ export default function CADCanvas({
   activeDepth = 10,
   panelHeight = 203.2,
   sheetThickness = 3,
+  unitSystem = 'mm',
   backgroundColor = 'dark',
   selectedElementId = null,
   onElementSelect,
@@ -256,6 +259,59 @@ export default function CADCanvas({
     const selectionColor = '#00FF00';
     const visualStrokeWidth = properties.draftMode === 'panel' ? Math.max(strokeWidth + 2, 4) : strokeWidth;
 
+    const renderDimensionLabels = () => {
+      if (!isSelected) return null;
+
+      if (type === 'line' && points.length >= 2) {
+        const midX = (points[0][0] + points[1][0]) / 2;
+        const midY = (points[0][1] + points[1][1]) / 2 - 12;
+        const length = Math.sqrt(
+          Math.pow(points[1][0] - points[0][0], 2) + Math.pow(points[1][1] - points[0][1], 2)
+        );
+
+        return (
+          <SvgText x={midX} y={midY} fill="#FFD60A" fontSize={12} fontWeight="bold" textAnchor="middle">
+            {`${formatMeasurement(length, unitSystem)} ${unitSystem}`}
+          </SvgText>
+        );
+      }
+
+      if (type === 'rectangle' && points.length >= 2) {
+        const x = Math.min(points[0][0], points[1][0]);
+        const y = Math.min(points[0][1], points[1][1]);
+        const width = Math.abs(points[1][0] - points[0][0]);
+        const height = Math.abs(points[1][1] - points[0][1]);
+
+        return (
+          <>
+            <SvgText x={x + width / 2} y={y - 8} fill="#FFD60A" fontSize={12} fontWeight="bold" textAnchor="middle">
+              {`${formatMeasurement(width, unitSystem)} ${unitSystem}`}
+            </SvgText>
+            <SvgText x={x + width + 8} y={y + height / 2} fill="#FFD60A" fontSize={12} fontWeight="bold">
+              {`${formatMeasurement(height, unitSystem)} ${unitSystem}`}
+            </SvgText>
+          </>
+        );
+      }
+
+      if (type === 'circle' && points.length >= 1 && properties.radius) {
+        return (
+          <SvgText
+            x={points[0][0]}
+            y={points[0][1] - properties.radius - 10}
+            fill="#FFD60A"
+            fontSize={12}
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            {`${formatMeasurement(properties.radius * 2, unitSystem)} ${unitSystem}`}
+          </SvgText>
+        );
+      }
+
+      return null;
+    };
+
     switch (type) {
       case 'line':
         if (points.length >= 2) {
@@ -280,6 +336,7 @@ export default function CADCanvas({
                   opacity={0.5}
                 />
               )}
+              {renderDimensionLabels()}
             </G>
           );
         }
@@ -315,6 +372,7 @@ export default function CADCanvas({
                   strokeDasharray="5,5"
                 />
               )}
+              {renderDimensionLabels()}
             </G>
           );
         }
@@ -344,6 +402,7 @@ export default function CADCanvas({
                   strokeDasharray="5,5"
                 />
               )}
+              {renderDimensionLabels()}
             </G>
           );
         }

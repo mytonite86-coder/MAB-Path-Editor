@@ -1,0 +1,77 @@
+{
+  "summary": "Frontend-only mobile regression completed for selected-geometry sketch workflow and FreeCAD-style feature flow. Core requested functionality works, with two notable issues: property-sheet close button is still intermittently untappable on 375x667, and applying horizontal then vertical constraints to the same selected line collapses it to 0 length.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "FeaturePropertySheet close control",
+        "issue": "Close button can be outside viewport and fails with 'Element is outside of the viewport' on 375x667, blocking normal modal dismissal during feature workflow.",
+        "testID": "freecad-close-properties-button",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Sketch constraint behavior for manual line",
+        "issue": "Applying Horizontal then Vertical on the same selected line can collapse line length to 0 mm instead of preserving length while changing orientation.",
+        "testID": "selected-element-horizontal-constraint-button",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Base Wall -> Flange -> Hem editing on mobile",
+        "issue": "Workflow passed only with JS-dispatched close workaround due close-button viewport bug; normal user tap path remains unstable.",
+        "affected_testIDs": [
+          "freecad-close-properties-button",
+          "freecad-add-baseWall-button",
+          "freecad-add-flange-button",
+          "freecad-add-hem-button"
+        ]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "CAD canvas header",
+        "issues": [
+          "Two trash icons appear simultaneously when an element is selected (delete selected + clear), which is visually ambiguous on small screens."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_5_smoke_home.jpeg",
+    "/app/test_reports/iteration_5_failure.jpeg",
+    "/app/test_reports/iteration_5_failure_retry.jpeg",
+    "/app/test_reports/iteration_5_circle_success.jpeg",
+    "/app/test_reports/iteration_5_feature_flow.jpeg",
+    "/root/.emergent/automation_output/20260325_023543/console_20260325_023543.log",
+    "/root/.emergent/automation_output/20260325_023652/console_20260325_023652.log",
+    "/root/.emergent/automation_output/20260325_023748/console_20260325_023748.log",
+    "/root/.emergent/automation_output/20260325_023917/console_20260325_023917.log"
+  ],
+  "action_items": [
+    "Fix FeaturePropertySheet close-button positioning/tap area so it is always reachable and tappable at 375x667 without workarounds.",
+    "Adjust line-constraint logic so switching between horizontal/vertical does not collapse line length to zero.",
+    "Re-run full mobile E2E with only real taps (no JS-dispatch workaround) for Base Wall -> Flange -> Hem flow.",
+    "Optional UX cleanup: disambiguate delete-selected vs clear-all trash icons in header."
+  ],
+  "critical_code_review_comments": [
+    "frontend/app/canvas.tsx remains oversized (>1500 lines), increasing coupling/regression risk in tool-state + modal-state interactions.",
+    "Constraint application uses endpoint projection without preserving prior segment length when changing orthogonal constraint, leading to potential zero-length collapse."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_5.json"
+  ],
+  "success_rate": {
+    "backend": "NA (frontend-only scope)",
+    "frontend": "83% (5/6 requested checks passed; 1 partially blocked by mobile modal close bug)"
+  },
+  "seed_data_creation": "None (guest mode session data only)",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Validated on 375x667: line selection panel, direct line length edit, constraint button taps, selected labels for line/rectangle/circle, inch toggle, and feature-panel open-properties CTA. Feature attachment flow (Base Wall -> Flange -> Hem) completed only after JS-dispatch close workaround due close button viewport/tappability issue.",
+  "rca_of_issue": "RCA 1: Property sheet close control intermittently renders outside tappable viewport in mobile web preview, causing Playwright/user click failures with 'outside of viewport'. RCA 2: Sequential horizontal->vertical constraint application reuses endpoint coordinates in a way that can force start/end overlap, producing a 0-length line label. Mitigation: enforce safe modal layout bounds and preserve current segment length when changing orientation constraints."
+}

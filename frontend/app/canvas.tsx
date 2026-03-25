@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import CADCanvas from '../components/CADCanvas';
 import { FeatureTreePanel } from '../components/FeatureTreePanel';
 import { FeaturePropertySheet } from '../components/FeaturePropertySheet';
+import { SelectedElementPanel } from '../components/SelectedElementPanel';
 import {
   FreeCADFeature,
   FreeCADFeatureParams,
@@ -120,6 +121,175 @@ export default function Canvas() {
       const manualElements = currentElements.filter((element) => !element.properties?.featureId);
       return [...manualElements, ...featureElements];
     });
+  };
+
+  const selectedElement = elements.find((element) => element.id === selectedElementId) || null;
+
+  const handleOpenSelectedFeatureProperties = () => {
+    const featureId = selectedElement?.properties?.featureId;
+    if (!featureId) {
+      return;
+    }
+
+    setSelectedFeatureId(featureId);
+    setShowFeatureSheet(true);
+  };
+
+  const handleUpdateSelectedElementValue = (field: string, value: string) => {
+    if (!selectedElementId) {
+      return;
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return;
+    }
+
+    const valueInMm = convertUnitToMm(numericValue, unitSystem);
+
+    setElements((currentElements) =>
+      currentElements.map((element) => {
+        if (element.id !== selectedElementId || element.properties?.featureId) {
+          return element;
+        }
+
+        if (element.type === 'line' && element.points.length >= 2) {
+          const [start, end] = element.points;
+          const dx = end[0] - start[0];
+          const dy = end[1] - start[1];
+          const currentLength = Math.sqrt(dx * dx + dy * dy) || 1;
+          const constraint = element.properties?.constraint;
+
+          if (field === 'length') {
+            const signX = dx >= 0 ? 1 : -1;
+            const signY = dy >= 0 ? 1 : -1;
+            let nextEnd = end;
+
+            if (constraint === 'horizontal') {
+              nextEnd = [start[0] + signX * valueInMm, start[1]];
+            } else if (constraint === 'vertical') {
+              nextEnd = [start[0], start[1] + signY * valueInMm];
+            } else {
+              nextEnd = [start[0] + (dx / currentLength) * valueInMm, start[1] + (dy / currentLength) * valueInMm];
+            }
+
+            return {
+              ...element,
+              points: [start, nextEnd],
+            };
+          }
+
+          if (field === 'depth') {
+            return {
+              ...element,
+              properties: {
+                ...element.properties,
+                depth: valueInMm,
+              },
+            };
+          }
+
+          if (field === 'panelHeight' || field === 'thickness') {
+            return {
+              ...element,
+              properties: {
+                ...element.properties,
+                depth: field === 'thickness' ? valueInMm : element.properties?.depth,
+                threeD: {
+                  ...element.properties?.threeD,
+                  height: field === 'panelHeight' ? valueInMm : element.properties?.threeD?.height,
+                  thickness: field === 'thickness' ? valueInMm : element.properties?.threeD?.thickness,
+                },
+              },
+            };
+          }
+        }
+
+        if (element.type === 'rectangle' && element.points.length >= 2) {
+          const [start, end] = element.points;
+          const signX = end[0] >= start[0] ? 1 : -1;
+          const signY = end[1] >= start[1] ? 1 : -1;
+
+          if (field === 'length') {
+            return {
+              ...element,
+              points: [start, [start[0] + signX * valueInMm, end[1]]],
+            };
+          }
+
+          if (field === 'height') {
+            return {
+              ...element,
+              points: [start, [end[0], start[1] + signY * valueInMm]],
+            };
+          }
+
+          if (field === 'depth') {
+            return {
+              ...element,
+              properties: {
+                ...element.properties,
+                depth: valueInMm,
+              },
+            };
+          }
+        }
+
+        if (element.type === 'circle' && field === 'diameter') {
+          return {
+            ...element,
+            properties: {
+              ...element.properties,
+              radius: valueInMm / 2,
+            },
+          };
+        }
+
+        if (element.type === 'circle' && field === 'depth') {
+          return {
+            ...element,
+            properties: {
+              ...element.properties,
+              depth: valueInMm,
+            },
+          };
+        }
+
+        return element;
+      })
+    );
+  };
+
+  const handleApplySelectedConstraint = (constraint: 'horizontal' | 'vertical' | 'free') => {
+    if (!selectedElementId) {
+      return;
+    }
+
+    setElements((currentElements) =>
+      currentElements.map((element) => {
+        if (element.id !== selectedElementId || element.type !== 'line' || element.points.length < 2 || element.properties?.featureId) {
+          return element;
+        }
+
+        const [start, end] = element.points;
+        let nextEnd = end;
+
+        if (constraint === 'horizontal') {
+          nextEnd = [end[0], start[1]];
+        } else if (constraint === 'vertical') {
+          nextEnd = [start[0], end[1]];
+        }
+
+        return {
+          ...element,
+          points: [start, nextEnd],
+          properties: {
+            ...element.properties,
+            constraint: constraint === 'free' ? null : constraint,
+          },
+        };
+      })
+    );
   };
 
   const handleAddFreecadFeature = (type: FreeCADFeatureType) => {
@@ -509,6 +679,7 @@ export default function Canvas() {
           activeDepth={parseDisplayMeasurement(activeDepth, 10)}
           panelHeight={parseDisplayMeasurement(panelHeight, 203.2)}
           sheetThickness={parseDisplayMeasurement(sheetThickness, 3)}
+          unitSystem={unitSystem}
           backgroundColor={canvasBackground}
           selectedElementId={selectedElementId}
           onElementSelect={setSelectedElementId}
@@ -534,6 +705,14 @@ export default function Canvas() {
           selectedFeatureId={selectedFeatureId}
           onSelectFeature={handleSelectFreecadFeature}
           onAddFeature={handleAddFreecadFeature}
+        />
+
+        <SelectedElementPanel
+          element={selectedElement}
+          unitSystem={unitSystem}
+          onUpdateValue={handleUpdateSelectedElementValue}
+          onApplyConstraint={handleApplySelectedConstraint}
+          onOpenFeatureProperties={handleOpenSelectedFeatureProperties}
         />
 
         <View style={styles.sectionHeaderRow}>
