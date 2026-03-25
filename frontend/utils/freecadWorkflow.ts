@@ -1,4 +1,5 @@
 export type FreeCADFeatureType = 'pad' | 'baseWall' | 'flange' | 'hem';
+export type MeasurementUnit = 'mm' | 'in';
 
 export interface CADElement {
   type: string;
@@ -81,6 +82,20 @@ const FEATURE_NAMES: Record<FreeCADFeatureType, string> = {
 
 const canvasX = (value: number) => 400 + value;
 const canvasY = (value: number) => 300 - value;
+
+export const convertMmToUnit = (valueInMm: number, unit: MeasurementUnit) => {
+  return unit === 'in' ? valueInMm / 25.4 : valueInMm;
+};
+
+export const convertUnitToMm = (value: number, unit: MeasurementUnit) => {
+  return unit === 'in' ? value * 25.4 : value;
+};
+
+export const formatMeasurement = (valueInMm: number, unit: MeasurementUnit) => {
+  const converted = convertMmToUnit(valueInMm, unit);
+  const precision = unit === 'in' ? 3 : 1;
+  return Number(converted.toFixed(precision)).toString();
+};
 
 export const createFeature = (type: FreeCADFeatureType, index: number): FreeCADFeature => ({
   id: `feature-${type}-${Date.now()}-${index}`,

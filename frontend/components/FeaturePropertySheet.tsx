@@ -9,7 +9,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { FreeCADFeature, FreeCADFeatureParams } from '../utils/freecadWorkflow';
+import {
+  FreeCADFeature,
+  FreeCADFeatureParams,
+  MeasurementUnit,
+  formatMeasurement,
+} from '../utils/freecadWorkflow';
 
 interface FeaturePropertySheetProps {
   feature: FreeCADFeature | null;
@@ -18,6 +23,7 @@ interface FeaturePropertySheetProps {
   onUpdateFeature: (featureId: string, updates: Partial<FreeCADFeature>) => void;
   onUpdateParam: (featureId: string, param: keyof FreeCADFeatureParams, value: string) => void;
   onRemoveFeature: (featureId: string) => void;
+  unitSystem: MeasurementUnit;
 }
 
 const FIELDS: { key: keyof FreeCADFeatureParams; label: string }[] = [
@@ -37,6 +43,7 @@ export const FeaturePropertySheet = ({
   onUpdateFeature,
   onUpdateParam,
   onRemoveFeature,
+  unitSystem,
 }: FeaturePropertySheetProps) => {
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -71,10 +78,10 @@ export const FeaturePropertySheet = ({
 
               {FIELDS.map((field) => (
                 <View key={field.key} style={styles.row}>
-                  <Text style={styles.fieldLabel}>{field.label}</Text>
+                  <Text style={styles.fieldLabel}>{field.label.replace('(mm)', `(${unitSystem})`)}</Text>
                   <TextInput
                     style={styles.input}
-                    value={String(feature.params[field.key])}
+                    value={formatMeasurement(feature.params[field.key], unitSystem)}
                     onChangeText={(value) => onUpdateParam(feature.id, field.key, value)}
                     keyboardType="numeric"
                     placeholderTextColor="#666"

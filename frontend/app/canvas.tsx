@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,10 @@ import {
   FreeCADFeatureParams,
   FreeCADFeatureType,
   buildElementsFromFeatures,
+  convertUnitToMm,
   createFeature,
+  formatMeasurement,
+  MeasurementUnit,
 } from '../utils/freecadWorkflow';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -47,6 +50,7 @@ export default function Canvas() {
   const [freecadFeatures, setFreecadFeatures] = useState<FreeCADFeature[]>([]);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const [showFeatureSheet, setShowFeatureSheet] = useState(false);
+  const [unitSystem, setUnitSystem] = useState<MeasurementUnit>('mm');
   const [activeTool, setActiveTool] = useState('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [activeStrokeWidth, setActiveStrokeWidth] = useState(2);
@@ -67,15 +71,22 @@ export default function Canvas() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [blueprintName, setBlueprintName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const previousUnitRef = useRef<MeasurementUnit>('mm');
 
-  const parseDepthValue = (value: unknown) => {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : Number(activeDepth) || 10;
-  };
-
-  const parsePositiveValue = (value: unknown, fallback: number) => {
+  const parseStoredMeasurement = (value: unknown, fallback: number) => {
     const numericValue = Number(value);
     return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
+  };
+
+  const parseDisplayMeasurement = (
+    value: unknown,
+    fallbackMm: number,
+    sourceUnit: MeasurementUnit = unitSystem
+  ) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0
+      ? convertUnitToMm(numericValue, sourceUnit)
+      : fallbackMm;
   };
 
   const normalizeElements = (incomingElements: CADElement[] = []) => {
@@ -86,10 +97,22 @@ export default function Canvas() {
         color: '#000000',
         strokeWidth: 2,
         ...element.properties,
-        depth: parseDepthValue(element.properties?.depth),
+        depth: parseStoredMeasurement(element.properties?.depth, 10),
       },
     }));
   };
+
+  useEffect(() => {
+    if (previousUnitRef.current === unitSystem) {
+      return;
+    }
+
+    const fromUnit = previousUnitRef.current;
+    setActiveDepth((currentValue) => formatMeasurement(parseDisplayMeasurement(currentValue, 10, fromUnit), unitSystem));
+    setPanelHeight((currentValue) => formatMeasurement(parseDisplayMeasurement(currentValue, 203.2, fromUnit), unitSystem));
+    setSheetThickness((currentValue) => formatMeasurement(parseDisplayMeasurement(currentValue, 3, fromUnit), unitSystem));
+    previousUnitRef.current = unitSystem;
+  }, [unitSystem]);
 
   const syncFeatureElements = (nextFeatures: FreeCADFeature[]) => {
     const featureElements = buildElementsFromFeatures(nextFeatures) as CADElement[];
@@ -140,7 +163,9 @@ export default function Canvas() {
         ...feature,
         params: {
           ...feature.params,
-          [param]: Number.isFinite(parsedValue) ? parsedValue : feature.params[param],
+          [param]: Number.isFinite(parsedValue)
+            ? convertUnitToMm(parsedValue, unitSystem)
+            : feature.params[param],
         },
       };
     });
@@ -388,8 +413,8 @@ export default function Canvas() {
   };
 
   const handleConvertLinesToPanels = () => {
-    const targetHeight = parsePositiveValue(panelHeight, 203.2);
-    const targetThickness = parsePositiveValue(sheetThickness, 3);
+    const targetHeight = parseDisplayMeasurement(panelHeight, 203.2);
+    const targetThickness = parseDisplayMeasurement(sheetThickness, 3);
     const hasLineElements = elements.some((element) => element.type === 'line');
 
     if (!hasLineElements) {
@@ -478,9 +503,9 @@ export default function Canvas() {
           activeTool={activeTool}
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
-          activeDepth={parseDepthValue(activeDepth)}
-          panelHeight={parsePositiveValue(panelHeight, 203.2)}
-          sheetThickness={parsePositiveValue(sheetThickness, 3)}
+          activeDepth={parseDisplayMeasurement(activeDepth, 10)}
+          panelHeight={parseDisplayMeasurement(panelHeight, 203.2)}
+          sheetThickness={parseDisplayMeasurement(sheetThickness, 3)}
           backgroundColor={canvasBackground}
           selectedElementId={selectedElementId}
           onElementSelect={setSelectedElementId}
@@ -508,7 +533,17 @@ export default function Canvas() {
           onAddFeature={handleAddFreecadFeature}
         />
 
-        <Text style={styles.sectionTitle}>Drawing Tools</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Drawing Tools</Text>
+          <TouchableOpacity
+            style={styles.unitToggleButton}
+            onPress={() => setUnitSystem(unitSystem === 'mm' ? 'in' : 'mm')}
+            testID="cad-unit-toggle-button"
+          >
+            <Ionicons name="swap-horizontal" size={16} color="#fff" />
+            <Text style={styles.unitToggleText}>{unitSystem.toUpperCase()}</Text>
+          </TouchableOpacity>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.toolsScroll}>
           {tools.map((tool) => (
             <TouchableOpacity
@@ -586,7 +621,7 @@ export default function Canvas() {
         </View>
 
         <View style={styles.depthSection}>
-          <Text style={styles.sectionTitle}>3D Depth (mm)</Text>
+          <Text style={styles.sectionTitle}>3D Depth ({unitSystem})</Text>
           <View style={styles.depthControls}>
             <TextInput
               style={styles.depthInput}
@@ -614,7 +649,9 @@ export default function Canvas() {
                       activeDepth === depth && styles.depthPresetTextActive,
                     ]}
                   >
-                    {depth}mm
+                    {unitSystem === 'in'
+                      ? `${formatMeasurement(Number(depth), 'in')}in`
+                      : `${depth}mm`}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -635,7 +672,7 @@ export default function Canvas() {
                 value={panelHeight}
                 onChangeText={setPanelHeight}
                 keyboardType="numeric"
-                placeholder="203.2"
+                placeholder={unitSystem === 'in' ? '8' : '203.2'}
                 placeholderTextColor="#666"
                 testID="cad-panel-height-input"
               />
@@ -647,7 +684,7 @@ export default function Canvas() {
                 value={sheetThickness}
                 onChangeText={setSheetThickness}
                 keyboardType="numeric"
-                placeholder="3"
+                placeholder={unitSystem === 'in' ? '0.118' : '3'}
                 placeholderTextColor="#666"
                 testID="cad-sheet-thickness-input"
               />
@@ -716,7 +753,7 @@ export default function Canvas() {
               }
               router.push({
                 pathname: '/viewer3d',
-                params: { elementsData: JSON.stringify(elements) }
+                params: { elementsData: JSON.stringify(elements), unitSystem }
               });
             }}
             testID="cad-view-3d-button"
@@ -879,6 +916,7 @@ export default function Canvas() {
         onUpdateFeature={handleUpdateFeature}
         onUpdateParam={handleUpdateFeatureParam}
         onRemoveFeature={handleRemoveFeature}
+        unitSystem={unitSystem}
       />
     </SafeAreaView>
   );
@@ -924,6 +962,29 @@ const styles = StyleSheet.create({
   controlsContent: {
     padding: 16,
     paddingTop: 8,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  unitToggleButton: {
+    marginTop: 24,
+    marginBottom: 12,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  unitToggleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   workflowIntroCard: {
     backgroundColor: '#111115',

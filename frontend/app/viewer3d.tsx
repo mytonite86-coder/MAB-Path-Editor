@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
 import * as THREE from 'three';
+import { convertUnitToMm, formatMeasurement, MeasurementUnit } from '../utils/freecadWorkflow';
 
 interface CADElement {
   type: string;
@@ -24,7 +25,7 @@ interface CADElement {
 
 export default function Viewer3D() {
   const router = useRouter();
-  const { elementsData } = useLocalSearchParams();
+  const { elementsData, unitSystem } = useLocalSearchParams();
   const [elements, setElements] = useState<CADElement[]>([]);
   const [extrusionDepth, setExtrusionDepth] = useState('10');
   const [showEngineering, setShowEngineering] = useState(false);
@@ -50,6 +51,21 @@ export default function Viewer3D() {
     pitch: 0.45,
   });
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
+  const [viewerUnitSystem, setViewerUnitSystem] = useState<MeasurementUnit>(
+    unitSystem === 'in' ? 'in' : 'mm'
+  );
+  const previousUnitRef = useRef<MeasurementUnit>(unitSystem === 'in' ? 'in' : 'mm');
+
+  const parseDisplayMeasurement = (
+    value: unknown,
+    fallbackMm: number,
+    sourceUnit: MeasurementUnit = viewerUnitSystem
+  ) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0
+      ? convertUnitToMm(numericValue, sourceUnit)
+      : fallbackMm;
+  };
 
   const getFallbackDepth = (els: CADElement[], preferredDepth?: number) => {
     const depthFromElements = els.find((element) => {
@@ -62,8 +78,8 @@ export default function Viewer3D() {
   };
 
   const resolvedDepth = useMemo(
-    () => getFallbackDepth(elements, Number.parseFloat(extrusionDepth)),
-    [elements, extrusionDepth]
+    () => getFallbackDepth(elements, parseDisplayMeasurement(extrusionDepth, 10)),
+    [elements, extrusionDepth, viewerUnitSystem]
   );
 
   const viewerKey = useMemo(() => {
@@ -78,7 +94,7 @@ export default function Viewer3D() {
         console.log('3D Viewer - Element count:', parsed.length);
         setElements(parsed);
         const suggestedDepth = getFallbackDepth(parsed);
-        setExtrusionDepth(String(suggestedDepth));
+        setExtrusionDepth(formatMeasurement(suggestedDepth, viewerUnitSystem));
         calculateEngineering(parsed, suggestedDepth, 'steel');
       } catch (error) {
         console.error('Error parsing elements:', error);
@@ -86,6 +102,18 @@ export default function Viewer3D() {
       }
     }
   }, [elementsData]);
+
+  useEffect(() => {
+    if (previousUnitRef.current === viewerUnitSystem) {
+      return;
+    }
+
+    const fromUnit = previousUnitRef.current;
+    setExtrusionDepth((currentValue) =>
+      formatMeasurement(parseDisplayMeasurement(currentValue, 10, fromUnit), viewerUnitSystem)
+    );
+    previousUnitRef.current = viewerUnitSystem;
+  }, [viewerUnitSystem]);
 
   useEffect(() => {
     if (elements.length > 0) {
@@ -519,7 +547,7 @@ export default function Viewer3D() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.controlRow}>
             <View style={styles.controlGroup}>
-              <Text style={styles.controlLabel}>Depth (mm)</Text>
+              <Text style={styles.controlLabel}>Depth ({viewerUnitSystem})</Text>
               <TextInput
                 style={styles.controlInput}
                 value={extrusionDepth}
@@ -556,6 +584,15 @@ export default function Viewer3D() {
                 ))}
               </ScrollView>
             </View>
+
+            <TouchableOpacity
+              style={styles.unitButton}
+              onPress={() => setViewerUnitSystem(viewerUnitSystem === 'mm' ? 'in' : 'mm')}
+              testID="viewer3d-unit-toggle-button"
+            >
+              <Ionicons name="swap-horizontal" size={16} color="#fff" />
+              <Text style={styles.unitButtonText}>{viewerUnitSystem.toUpperCase()}</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.recalcButton}
@@ -830,6 +867,22 @@ const styles = StyleSheet.create({
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  unitButton: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  unitButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   recalcText: {
     color: '#fff',
