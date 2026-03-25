@@ -272,12 +272,17 @@ export default function Canvas() {
         }
 
         const [start, end] = element.points;
+        const dx = end[0] - start[0];
+        const dy = end[1] - start[1];
+        const lineLength = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
         let nextEnd = end;
 
         if (constraint === 'horizontal') {
-          nextEnd = [end[0], start[1]];
+          const direction = dx >= 0 ? 1 : -1;
+          nextEnd = [start[0] + direction * lineLength, start[1]];
         } else if (constraint === 'vertical') {
-          nextEnd = [start[0], end[1]];
+          const direction = dy >= 0 ? 1 : -1;
+          nextEnd = [start[0], start[1] + direction * lineLength];
         }
 
         return {
@@ -664,7 +669,7 @@ export default function Canvas() {
             style={styles.headerButton}
             testID="cad-canvas-clear-button"
           >
-            <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+            <Ionicons name="close-circle-outline" size={24} color="#FF9500" />
           </TouchableOpacity>
         </View>
       </View>

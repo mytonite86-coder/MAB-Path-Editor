@@ -367,6 +367,24 @@ frontend:
         agent: "testing"
         comment: "✅ TESTED: Canvas mm/in toggle, inch-based property editing, route-to-3D flow, viewer unit toggle, and legacy manual panel conversion all passed on mobile viewport."
 
+  - task: "Sketch Constraints + Direct Dimensions"
+    implemented: true
+    working: true
+    file: "components/SelectedElementPanel.tsx, components/CADCanvas.tsx, app/canvas.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added a selected-geometry inspector for manual sketching. Supports direct dimension editing for manual line/rectangle/circle elements plus first-pass horizontal/vertical/free constraints for manual lines."
+      - working: false
+        agent: "testing"
+        comment: "Testing agent found two issues: property-sheet close control was intermittently untappable on 375x667, and switching horizontal -> vertical on a line could collapse length to 0 mm."
+      - working: true
+        agent: "main"
+        comment: "Fixed the property-sheet close button to remain safely tappable in normal mobile flow and updated constraint logic to preserve segment length when changing orientation. Self-retested on 375x667: close button worked and horizontal->vertical preserved non-zero line length."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true

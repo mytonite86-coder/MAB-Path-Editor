@@ -38,6 +38,10 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Added **3D view controls** for orbit, pan, zoom, auto-rotate toggle, and reset view
 - Fixed the FreeCAD property sheet so the close control stays reachable on small mobile screens
 - Added **inch measurement support** alongside millimeters in the canvas workflow and 3D viewer. Feature properties, depth inputs, sheet drafting inputs, and viewer depth now support mm/in toggling.
+- Added a **selected geometry inspector** for manual sketching with direct dimension editing for line / rectangle / circle elements.
+- Added first-pass **sketch constraints** for manual lines: horizontal, vertical, and free.
+- Selected geometry now shows **live dimension labels on the canvas** in the active unit system.
+- Fixed the feature property sheet close control again for small mobile screens and preserved line length when switching between horizontal/vertical constraints.
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`
@@ -54,6 +58,9 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Add direct fold-aware manual drafting tools (bend/flange/hem editing instead of only panel-edge drafting)
 - Add sketch constraints/dimensions and feature relations/attachments to deepen FreeCAD-style parametric behavior
 - Continue breaking down oversized `frontend/app/canvas.tsx` into smaller components
+
+### Immediate Next Step
+- Add first-pass **Part Design tools**: pocket, chamfer, fillet, and mirror on top of the current FreeCAD-style workflow
 
 ### P1
 - Stripe premium payments

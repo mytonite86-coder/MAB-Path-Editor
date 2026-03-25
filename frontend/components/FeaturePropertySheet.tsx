@@ -53,7 +53,7 @@ export const FeaturePropertySheet = ({
       <View style={styles.overlay}>
         <View style={styles.sheet} testID="freecad-feature-property-sheet">
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerTextWrap}>
               <Text style={styles.headerLabel}>PROPERTIES</Text>
               <Text style={styles.title}>{feature?.name || 'Feature'}</Text>
             </View>
@@ -177,17 +177,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
-    paddingRight: 48,
     zIndex: 2,
   },
+  headerTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
   closeButton: {
-    position: 'absolute',
-    right: 0,
-    top: -4,
     minWidth: 44,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   headerLabel: {
     color: '#7E7E87',
