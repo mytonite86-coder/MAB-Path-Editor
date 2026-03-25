@@ -41,6 +41,9 @@ export default function Canvas() {
   const [canvasBackground, setCanvasBackground] = useState<'dark' | 'light'>('dark');
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [activeDepth, setActiveDepth] = useState('10'); // Default depth for 3D
+  const [panelHeight, setPanelHeight] = useState('203.2');
+  const [sheetThickness, setSheetThickness] = useState('3');
+  const [viewportResetSignal, setViewportResetSignal] = useState(0);
   
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiMode, setAiMode] = useState<'text' | 'image' | null>(null);
@@ -56,6 +59,11 @@ export default function Canvas() {
   const parseDepthValue = (value: unknown) => {
     const numericValue = Number(value);
     return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : Number(activeDepth) || 10;
+  };
+
+  const parsePositiveValue = (value: unknown, fallback: number) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
   };
 
   const normalizeElements = (incomingElements: CADElement[] = []) => {
@@ -284,9 +292,48 @@ export default function Canvas() {
     }
   };
 
+  const handleConvertLinesToPanels = () => {
+    const targetHeight = parsePositiveValue(panelHeight, 203.2);
+    const targetThickness = parsePositiveValue(sheetThickness, 3);
+    const hasLineElements = elements.some((element) => element.type === 'line');
+
+    if (!hasLineElements) {
+      Alert.alert('No Lines Found', 'Draw some line edges first, then convert them to sheet panels.');
+      return;
+    }
+
+    setElements((currentElements) =>
+      currentElements.map((element) => {
+        if (element.type !== 'line') {
+          return element;
+        }
+
+        return {
+          ...element,
+          properties: {
+            ...element.properties,
+            depth: targetThickness,
+            draftMode: 'panel',
+            filled: true,
+            threeD: {
+              shape: 'panelLine',
+              height: targetHeight,
+              thickness: targetThickness,
+            },
+          },
+        };
+      })
+    );
+
+    setActiveTool('select');
+    Alert.alert('Sheet Panels Ready', 'Your line sketch was converted into panel-style 3D elements.');
+  };
+
   const tools = [
     { id: 'select', icon: 'hand-left', label: 'Select' },
+    { id: 'pan', icon: 'resize', label: 'Pan' },
     { id: 'line', icon: 'remove', label: 'Line' },
+    { id: 'panel', icon: 'layers', label: 'Panel' },
     { id: 'rectangle', icon: 'square-outline', label: 'Rectangle' },
     { id: 'circle', icon: 'ellipse-outline', label: 'Circle' },
   ];
@@ -337,9 +384,12 @@ export default function Canvas() {
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
           activeDepth={parseDepthValue(activeDepth)}
+          panelHeight={parsePositiveValue(panelHeight, 203.2)}
+          sheetThickness={parsePositiveValue(sheetThickness, 3)}
           backgroundColor={canvasBackground}
           selectedElementId={selectedElementId}
           onElementSelect={setSelectedElementId}
+          viewportResetSignal={viewportResetSignal}
         />
       </View>
 
@@ -459,6 +509,60 @@ export default function Canvas() {
           </View>
           <Text style={styles.depthHint}>
             Set depth for new shapes (for 3D view)
+          </Text>
+        </View>
+
+        <View style={styles.depthSection}>
+          <Text style={styles.sectionTitle}>Sheet Drafting</Text>
+          <View style={styles.sheetDraftRow}>
+            <View style={styles.sheetDraftInputGroup}>
+              <Text style={styles.sheetDraftLabel}>Panel Height</Text>
+              <TextInput
+                style={styles.sheetDraftInput}
+                value={panelHeight}
+                onChangeText={setPanelHeight}
+                keyboardType="numeric"
+                placeholder="203.2"
+                placeholderTextColor="#666"
+                testID="cad-panel-height-input"
+              />
+            </View>
+            <View style={styles.sheetDraftInputGroup}>
+              <Text style={styles.sheetDraftLabel}>Thickness</Text>
+              <TextInput
+                style={styles.sheetDraftInput}
+                value={sheetThickness}
+                onChangeText={setSheetThickness}
+                keyboardType="numeric"
+                placeholder="3"
+                placeholderTextColor="#666"
+                testID="cad-sheet-thickness-input"
+              />
+            </View>
+          </View>
+
+          <View style={styles.sheetDraftActions}>
+            <TouchableOpacity
+              style={styles.sheetDraftButton}
+              onPress={handleConvertLinesToPanels}
+              testID="cad-convert-lines-to-panels-button"
+            >
+              <Ionicons name="layers" size={18} color="#fff" />
+              <Text style={styles.sheetDraftButtonText}>Convert Lines to Panels</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryActionButton}
+              onPress={() => setViewportResetSignal((value) => value + 1)}
+              testID="cad-reset-view-button"
+            >
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <Text style={styles.sheetDraftButtonText}>Center Draft View</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.depthHint}>
+            Use Panel tool for sheet walls, or convert an existing line sketch into panels.
           </Text>
         </View>
 
@@ -831,6 +935,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
     fontStyle: 'italic',
+  },
+  sheetDraftRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  sheetDraftInputGroup: {
+    flex: 1,
+  },
+  sheetDraftLabel: {
+    color: '#999',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  sheetDraftInput: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    fontSize: 15,
+  },
+  sheetDraftActions: {
+    gap: 10,
+    marginTop: 12,
+  },
+  sheetDraftButton: {
+    backgroundColor: '#5856D6',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryActionButton: {
+    backgroundColor: '#444',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetDraftButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   aiButtons: {
     flexDirection: 'row',

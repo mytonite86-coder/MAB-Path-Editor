@@ -94,6 +94,16 @@ export default function Viewer3D() {
       if (threeD?.shape === 'box') {
         totalArea += 2 * (threeD.width * threeD.height + threeD.width * threeD.depth + threeD.height * threeD.depth);
         totalVolumeMM3 += threeD.width * threeD.height * threeD.depth;
+      } else if (threeD?.shape === 'panelLine' && el.points.length >= 2) {
+        const x1 = el.points[0][0];
+        const y1 = el.points[0][1];
+        const x2 = el.points[1][0];
+        const y2 = el.points[1][1];
+        const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        const panelHeight = Number(threeD.height) || depth;
+        const panelThickness = Number(threeD.thickness) || 3;
+        totalArea += 2 * (length * panelHeight + length * panelThickness + panelHeight * panelThickness);
+        totalVolumeMM3 += length * panelHeight * panelThickness;
       } else if (el.type === 'rectangle' && el.points.length >= 2) {
         const width = Math.abs(el.points[1][0] - el.points[0][0]);
         const height = Math.abs(el.points[1][1] - el.points[0][1]);
@@ -226,6 +236,33 @@ export default function Viewer3D() {
             ((solid3D.rotationY || 0) * Math.PI) / 180,
             ((solid3D.rotationZ || 0) * Math.PI) / 180
           );
+          modelGroup.add(mesh);
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
+          );
+          line.position.copy(mesh.position);
+          line.rotation.copy(mesh.rotation);
+          modelGroup.add(line);
+          return;
+        }
+
+        if (solid3D?.shape === 'panelLine' && element.type === 'line' && element.points.length >= 2) {
+          const x1 = element.points[0][0] - 400;
+          const z1 = -(element.points[0][1] - 300);
+          const x2 = element.points[1][0] - 400;
+          const z2 = -(element.points[1][1] - 300);
+          const panelHeight = Number(solid3D.height) || depth;
+          const panelThickness = Number(solid3D.thickness) || 3;
+          const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
+          const angle = Math.atan2(z2 - z1, x2 - x1);
+
+          const geometry = new THREE.BoxGeometry(length, panelHeight, panelThickness);
+          const mesh = new THREE.Mesh(geometry, meshMaterial);
+          mesh.position.set((x1 + x2) / 2, panelHeight / 2, (z1 + z2) / 2);
+          mesh.rotation.y = -angle;
           modelGroup.add(mesh);
 
           const edges = new THREE.EdgesGeometry(geometry);

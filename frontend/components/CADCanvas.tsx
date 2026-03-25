@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { View, StyleSheet, Dimensions, Text, PanResponder } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Dimensions, Text } from 'react-native';
 import Svg, { Line, Rect, Circle, Polygon, Text as SvgText, G } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -20,9 +20,12 @@ interface CADCanvasProps {
   activeColor?: string;
   activeStrokeWidth?: number;
   activeDepth?: number;
+  panelHeight?: number;
+  sheetThickness?: number;
   backgroundColor?: 'dark' | 'light';
   selectedElementId?: string | null;
   onElementSelect?: (id: string | null) => void;
+  viewportResetSignal?: number;
 }
 
 export default function CADCanvas({
@@ -32,13 +35,22 @@ export default function CADCanvas({
   activeColor = '#000000',
   activeStrokeWidth = 2,
   activeDepth = 10,
+  panelHeight = 203.2,
+  sheetThickness = 3,
   backgroundColor = 'dark',
   selectedElementId = null,
   onElementSelect,
+  viewportResetSignal = 0,
 }: CADCanvasProps) {
   const [currentPoints, setCurrentPoints] = useState<number[][]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [dragOffset, setDragOffset] = useState<{x: number, y: number} | null>(null);
+  const [dragPoint, setDragPoint] = useState<{x: number, y: number} | null>(null);
+  const [panPoint, setPanPoint] = useState<{x: number, y: number} | null>(null);
+  const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setViewportOffset({ x: 0, y: 0 });
+  }, [viewportResetSignal]);
 
   const getVisibleColor = (rawColor: string) => {
     const normalizedColor = rawColor.toLowerCase();
@@ -56,6 +68,7 @@ export default function CADCanvas({
 
   const isPointInElement = (x: number, y: number, element: CADElement): boolean => {
     const { type, points, properties } = element;
+    const lineHitTolerance = properties?.draftMode === 'panel' ? 20 : 16;
     
     if (type === 'rectangle' && points.length >= 2) {
       const minX = Math.min(points[0][0], points[1][0]);
@@ -73,10 +86,11 @@ export default function CADCanvas({
     }
     
     if (type === 'line' && points.length >= 2) {
-      // Check if point is near the line (within 10 pixels)
+      // Check if point is near the line
       const dx = points[1][0] - points[0][0];
       const dy = points[1][1] - points[0][1];
       const length = Math.sqrt(dx * dx + dy * dy);
+      if (length === 0) return false;
       const dot = ((x - points[0][0]) * dx + (y - points[0][1]) * dy) / (length * length);
       
       if (dot < 0 || dot > 1) return false;
@@ -84,23 +98,35 @@ export default function CADCanvas({
       const projX = points[0][0] + dot * dx;
       const projY = points[0][1] + dot * dy;
       const distance = Math.sqrt((x - projX) ** 2 + (y - projY) ** 2);
-      return distance <= 10;
+      return distance <= lineHitTolerance;
     }
     
     return false;
   };
 
+  const toCanvasPoint = (x: number, y: number) => ({
+    x: x - viewportOffset.x,
+    y: y - viewportOffset.y,
+  });
+
   const handleTouchStart = (evt: any) => {
     const { locationX, locationY } = evt.nativeEvent;
+
+    if (activeTool === 'pan') {
+      setPanPoint({ x: locationX, y: locationY });
+      return;
+    }
+
+    const canvasPoint = toCanvasPoint(locationX, locationY);
     
     if (activeTool === 'select') {
       // Check if touching an existing element
       for (let i = elements.length - 1; i >= 0; i--) {
-        if (isPointInElement(locationX, locationY, elements[i])) {
+        if (isPointInElement(canvasPoint.x, canvasPoint.y, elements[i])) {
           if (onElementSelect) {
             onElementSelect(elements[i].id || null);
           }
-          setDragOffset({ x: locationX, y: locationY });
+          setDragPoint({ x: canvasPoint.x, y: canvasPoint.y });
           return;
         }
       }
@@ -112,16 +138,29 @@ export default function CADCanvas({
     }
     
     setIsDrawing(true);
-    setCurrentPoints([[locationX, locationY]]);
+    setCurrentPoints([[canvasPoint.x, canvasPoint.y]]);
   };
 
   const handleTouchMove = (evt: any) => {
     const { locationX, locationY } = evt.nativeEvent;
+
+    if (activeTool === 'pan' && panPoint) {
+      const dx = locationX - panPoint.x;
+      const dy = locationY - panPoint.y;
+      setViewportOffset((currentOffset) => ({
+        x: currentOffset.x + dx,
+        y: currentOffset.y + dy,
+      }));
+      setPanPoint({ x: locationX, y: locationY });
+      return;
+    }
+
+    const canvasPoint = toCanvasPoint(locationX, locationY);
     
-    if (activeTool === 'select' && selectedElementId && dragOffset) {
+    if (activeTool === 'select' && selectedElementId && dragPoint) {
       // Move selected element
-      const dx = locationX - dragOffset.x;
-      const dy = locationY - dragOffset.y;
+      const dx = canvasPoint.x - dragPoint.x;
+      const dy = canvasPoint.y - dragPoint.y;
       
       const updatedElements = elements.map(el => {
         if (el.id === selectedElementId) {
@@ -137,20 +176,25 @@ export default function CADCanvas({
         onElementsChange(updatedElements);
       }
       
-      setDragOffset({ x: locationX, y: locationY });
+      setDragPoint({ x: canvasPoint.x, y: canvasPoint.y });
       return;
     }
     
-    if (!isDrawing || activeTool === 'select') return;
+    if (!isDrawing || activeTool === 'select' || activeTool === 'pan') return;
     
-    if (activeTool === 'line' || activeTool === 'rectangle' || activeTool === 'circle') {
-      setCurrentPoints([[currentPoints[0][0], currentPoints[0][1]], [locationX, locationY]]);
+    if (activeTool === 'line' || activeTool === 'panel' || activeTool === 'rectangle' || activeTool === 'circle') {
+      setCurrentPoints([[currentPoints[0][0], currentPoints[0][1]], [canvasPoint.x, canvasPoint.y]]);
     }
   };
 
   const handleTouchEnd = () => {
+    if (activeTool === 'pan') {
+      setPanPoint(null);
+      return;
+    }
+
     if (activeTool === 'select') {
-      setDragOffset(null);
+      setDragPoint(null);
       return;
     }
     
@@ -160,16 +204,29 @@ export default function CADCanvas({
       const points = currentPoints.length >= 2 
         ? currentPoints 
         : [[currentPoints[0][0], currentPoints[0][1]], [currentPoints[0][0] + 50, currentPoints[0][1] + 50]];
+
+      const isPanelDraft = activeTool === 'panel';
       
       const newElement: CADElement = {
         id: `elem_${Date.now()}`,
-        type: activeTool,
+        type: isPanelDraft ? 'line' : activeTool,
         points: points,
         properties: {
           color: activeColor,
           strokeWidth: activeStrokeWidth,
           layer: 'default',
-          depth: activeDepth,
+          depth: isPanelDraft ? sheetThickness : activeDepth,
+          ...(isPanelDraft
+            ? {
+                draftMode: 'panel',
+                filled: true,
+                threeD: {
+                  shape: 'panelLine',
+                  height: panelHeight,
+                  thickness: sheetThickness,
+                },
+              }
+            : {}),
         },
       };
 
@@ -197,6 +254,7 @@ export default function CADCanvas({
     const key = element.id || `element_${index}`;
     const isSelected = element.id === selectedElementId;
     const selectionColor = '#00FF00';
+    const visualStrokeWidth = properties.draftMode === 'panel' ? Math.max(strokeWidth + 2, 4) : strokeWidth;
 
     switch (type) {
       case 'line':
@@ -209,7 +267,7 @@ export default function CADCanvas({
                 x2={points[1][0]}
                 y2={points[1][1]}
                 stroke={color}
-                strokeWidth={strokeWidth}
+                strokeWidth={visualStrokeWidth}
               />
               {isSelected && (
                 <Line
@@ -218,7 +276,7 @@ export default function CADCanvas({
                   x2={points[1][0]}
                   y2={points[1][1]}
                   stroke={selectionColor}
-                  strokeWidth={strokeWidth + 4}
+                  strokeWidth={visualStrokeWidth + 6}
                   opacity={0.5}
                 />
               )}
@@ -331,7 +389,7 @@ export default function CADCanvas({
   const renderCurrentDrawing = () => {
     if (!isDrawing || currentPoints.length === 0) return null;
 
-    if (activeTool === 'line' && currentPoints.length === 2) {
+    if ((activeTool === 'line' || activeTool === 'panel') && currentPoints.length === 2) {
       return (
         <Line
           x1={currentPoints[0][0]}
@@ -339,7 +397,7 @@ export default function CADCanvas({
           x2={currentPoints[1][0]}
           y2={currentPoints[1][1]}
           stroke={activeColor}
-          strokeWidth={activeStrokeWidth}
+          strokeWidth={activeTool === 'panel' ? Math.max(activeStrokeWidth + 2, 4) : activeStrokeWidth}
           strokeDasharray="5,5"
         />
       );
@@ -402,43 +460,51 @@ export default function CADCanvas({
           backgroundColor === 'light' && styles.canvasLight
         ]}
       >
-        {/* Grid background */}
-        <G opacity={0.1}>
-          {Array.from({ length: 20 }).map((_, i) => (
-            <Line
-              key={`v${i}`}
-              x1={(i * CANVAS_WIDTH) / 20}
-              y1={0}
-              x2={(i * CANVAS_WIDTH) / 20}
-              y2={CANVAS_HEIGHT}
-              stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
-              strokeWidth={1}
-            />
-          ))}
-          {Array.from({ length: 15 }).map((_, i) => (
-            <Line
-              key={`h${i}`}
-              x1={0}
-              y1={(i * CANVAS_HEIGHT) / 15}
-              x2={CANVAS_WIDTH}
-              y2={(i * CANVAS_HEIGHT) / 15}
-              stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
-              strokeWidth={1}
-            />
-          ))}
+        <G transform={`translate(${viewportOffset.x}, ${viewportOffset.y})`}>
+          {/* Grid background */}
+          <G opacity={0.1}>
+            {Array.from({ length: 20 }).map((_, i) => (
+              <Line
+                key={`v${i}`}
+                x1={(i * CANVAS_WIDTH) / 20}
+                y1={0}
+                x2={(i * CANVAS_WIDTH) / 20}
+                y2={CANVAS_HEIGHT}
+                stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
+                strokeWidth={1}
+              />
+            ))}
+            {Array.from({ length: 15 }).map((_, i) => (
+              <Line
+                key={`h${i}`}
+                x1={0}
+                y1={(i * CANVAS_HEIGHT) / 15}
+                x2={CANVAS_WIDTH}
+                y2={(i * CANVAS_HEIGHT) / 15}
+                stroke={backgroundColor === 'light' ? '#000000' : '#ffffff'}
+                strokeWidth={1}
+              />
+            ))}
+          </G>
+
+          {/* Render all elements */}
+          {elements.map((element, index) => renderElement(element, index))}
+
+          {/* Render current drawing */}
+          {renderCurrentDrawing()}
         </G>
-
-        {/* Render all elements */}
-        {elements.map((element, index) => renderElement(element, index))}
-
-        {/* Render current drawing */}
-        {renderCurrentDrawing()}
       </Svg>
 
       {elements.length === 0 && !isDrawing && (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>
-            {activeTool === 'select' ? 'Select a tool to start drawing' : 'Tap and drag to draw'}
+            {activeTool === 'select'
+              ? 'Tap an element to select it'
+              : activeTool === 'pan'
+                ? 'Drag to pan the drafting view'
+                : activeTool === 'panel'
+                  ? 'Tap and drag to place a sheet panel line'
+                  : 'Tap and drag to draw'}
           </Text>
         </View>
       )}

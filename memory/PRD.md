@@ -28,6 +28,11 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - AI-generated elements now normalize IDs/depth for editing and 3D usage
 - Critical auth/canvas/viewer/home controls now include testIDs
 - Image-picker permissions added to app config
+- Added a dedicated **Pan** tool on the draft canvas for moving the drafting view without drawing
+- Added a dedicated **Panel** drafting tool for manual sheet-style wall/panel edges
+- Added **Convert Lines to Panels** so an existing manual line sketch can be turned into panel-style 3D geometry
+- 3D viewer now understands manual `panelLine` geometry and renders those draft lines as vertical panels instead of wire-frame beams
+- Selection hit-testing for lines/panels is more forgiving, improving select/delete reliability in preview
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`
@@ -41,6 +46,7 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 ### P0
 - Validate real-device user flow for text-to-3D on the user’s own prompts/sketches
 - Improve Image-to-CAD quality specifically for rough hand drawings
+- Add direct fold-aware manual drafting tools (bend/flange/hem editing instead of only panel-edge drafting)
 - Continue breaking down oversized `frontend/app/canvas.tsx` into smaller components
 
 ### P1

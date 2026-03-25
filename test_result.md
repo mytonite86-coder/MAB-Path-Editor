@@ -289,6 +289,39 @@ frontend:
         agent: "testing"
         comment: "✅ REGRESSION TESTED: Direct viewer route and canvas-generated viewer route both rendered a visible solid block. Minor follow-up UX polish from testing was applied: larger top touch targets and safer render-loop invalidation."
 
+  - task: "Manual Sheet Drafting"
+    implemented: true
+    working: true
+    file: "app/canvas.tsx, components/CADCanvas.tsx, app/viewer3d.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported that manual drawings still turned into wire-frame/beam structures in 3D instead of usable sheet/panel parts."
+      - working: true
+        agent: "main"
+        comment: "Added a Pan tool, a Panel drafting tool, and a Convert Lines to Panels action. Viewer now renders `panelLine` geometry as vertical sheet-style panels instead of beam extrusions."
+      - working: true
+        agent: "main"
+        comment: "Self-tested by opening panel-style elements directly in the 3D viewer and by drawing/selecting a manual panel line on the canvas in preview."
+
+  - task: "Canvas Selection Reliability"
+    implemented: true
+    working: true
+    file: "components/CADCanvas.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported select/delete did not work reliably for parts/lines in preview."
+      - working: true
+        agent: "main"
+        comment: "Increased line hit tolerance and improved panel line selection width. Self-tested selection in preview; selecting a drawn panel line now shows the delete action reliably."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true
