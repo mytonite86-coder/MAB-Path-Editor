@@ -67,7 +67,11 @@ export const FeaturePropertySheet = ({
           </View>
 
           {feature && (
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              key={feature.id}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               <View style={styles.row}>
                 <Text style={styles.fieldLabel}>Enabled</Text>
                 <TouchableOpacity
@@ -164,7 +168,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     paddingTop: 58,
-    maxHeight: '82%',
+    minHeight: '72%',
+    maxHeight: '88%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -172,6 +178,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
     paddingRight: 48,
+    zIndex: 2,
   },
   closeButton: {
     position: 'absolute',
