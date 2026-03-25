@@ -385,6 +385,27 @@ frontend:
         agent: "main"
         comment: "Fixed the property-sheet close button to remain safely tappable in normal mobile flow and updated constraint logic to preserve segment length when changing orientation. Self-retested on 375x667: close button worked and horizontal->vertical preserved non-zero line length."
 
+  - task: "Part Design Tools (Pocket/Chamfer/Fillet/Mirror)"
+    implemented: true
+    working: true
+    file: "utils/freecadWorkflow.ts, components/FeatureTreePanel.tsx, components/FeaturePropertySheet.tsx, app/viewer3d.tsx, app/canvas.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added first-pass Part Design actions to the FreeCAD-style mobile workflow. Pocket, Chamfer, Fillet, and Mirror now exist in the feature tree, drive type-specific property fields, and generate updated pad geometry for 3D viewing."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Pocket, Chamfer, Fillet, and Mirror actions are present. Pad -> Pocket -> 3D produced a profileExtrude with holes, Pad -> Chamfer -> 3D produced an 8-point chamfered outline, and Pad -> Mirror -> 3D produced a second mirrored solid."
+      - working: false
+        agent: "testing"
+        comment: "Testing agent noted the feature-sheet close button could still be intermittently untappable during repeated small-screen interactions."
+      - working: true
+        agent: "main"
+        comment: "Added a large in-flow Done button using the original close testID and self-retested repeated close interactions on 375x667 across Pad/Pocket/Chamfer sheets successfully."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true

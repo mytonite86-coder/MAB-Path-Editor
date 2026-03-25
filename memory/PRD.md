@@ -42,6 +42,9 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Added first-pass **sketch constraints** for manual lines: horizontal, vertical, and free.
 - Selected geometry now shows **live dimension labels on the canvas** in the active unit system.
 - Fixed the feature property sheet close control again for small mobile screens and preserved line length when switching between horizontal/vertical constraints.
+- Added first-pass **Part Design tools** to the FreeCAD-style workflow: **Pocket, Chamfer, Fillet, and Mirror**.
+- Pad features can now generate **profile-based solids** with cutouts/chamfered or filleted outlines, and mirrored copies render in the 3D viewer.
+- Property sheet now adapts its fields by feature type, and the mobile close action was hardened with a large in-flow Done button for repeated small-screen use.
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`
@@ -60,7 +63,7 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Continue breaking down oversized `frontend/app/canvas.tsx` into smaller components
 
 ### Immediate Next Step
-- Add first-pass **Part Design tools**: pocket, chamfer, fillet, and mirror on top of the current FreeCAD-style workflow
+- Deepen **feature relations/attachments** so Part Design and sheet-metal features attach more intelligently to selected faces/edges instead of simple parent references
 
 ### P1
 - Stripe premium payments

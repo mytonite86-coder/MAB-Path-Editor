@@ -56,7 +56,7 @@ export const FeaturePropertySheet = ({
             <TouchableOpacity
               onPress={onClose}
               style={styles.closeButton}
-              testID="freecad-close-properties-button"
+              testID="freecad-close-properties-icon-button"
             >
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
@@ -68,6 +68,15 @@ export const FeaturePropertySheet = ({
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
             >
+              <TouchableOpacity
+                style={styles.primaryCloseButton}
+                onPress={onClose}
+                testID="freecad-close-properties-button"
+              >
+                <Ionicons name="chevron-down" size={18} color="#fff" />
+                <Text style={styles.primaryCloseButtonText}>Done</Text>
+              </TouchableOpacity>
+
               <View style={styles.row}>
                 <Text style={styles.fieldLabel}>Enabled</Text>
                 <TouchableOpacity
@@ -209,6 +218,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 24,
+  },
+  primaryCloseButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  primaryCloseButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   row: {
     paddingVertical: 12,
