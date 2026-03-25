@@ -175,13 +175,16 @@ export default function Viewer3D() {
     scene.add(directionalLight);
 
     // Add grid
-    const gridHelper = new THREE.GridHelper(500, 20, 0x444444, 0x222222);
+    const gridHelper = new THREE.GridHelper(800, 24, 0x444444, 0x222222);
     gridHelper.position.y = -depth / 2 - 20;
     scene.add(gridHelper);
 
     // Add axis helper
     const axesHelper = new THREE.AxesHelper(200);
     scene.add(axesHelper);
+
+    const modelGroup = new THREE.Group();
+    scene.add(modelGroup);
 
     // Get material properties
     const materials: any = {
@@ -216,7 +219,7 @@ export default function Viewer3D() {
           const geometry = new THREE.BoxGeometry(width, elementDepth, height);
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set(centerX, 0, centerZ);
-          scene.add(mesh);
+          modelGroup.add(mesh);
 
           // Add edges
           const edges = new THREE.EdgesGeometry(geometry);
@@ -225,7 +228,7 @@ export default function Viewer3D() {
             new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 })
           );
           line.position.set(centerX, 0, centerZ);
-          scene.add(line);
+          modelGroup.add(line);
         } else if (element.type === 'circle' && element.properties.radius) {
           const radius = element.properties.radius;
           const centerX = element.points[0][0] - 400;
@@ -235,7 +238,7 @@ export default function Viewer3D() {
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set(centerX, 0, centerZ);
           mesh.rotation.x = Math.PI / 2;
-          scene.add(mesh);
+          modelGroup.add(mesh);
 
           // Add edges
           const edges = new THREE.EdgesGeometry(geometry);
@@ -245,7 +248,7 @@ export default function Viewer3D() {
           );
           line.position.set(centerX, 0, centerZ);
           line.rotation.x = Math.PI / 2;
-          scene.add(line);
+          modelGroup.add(line);
         } else if (element.type === 'line' && element.points.length >= 2) {
           // Create a thin box for lines
           const x1 = element.points[0][0] - 400;
@@ -260,7 +263,7 @@ export default function Viewer3D() {
           const mesh = new THREE.Mesh(geometry, meshMaterial);
           mesh.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
           mesh.rotation.y = -angle;
-          scene.add(mesh);
+          modelGroup.add(mesh);
 
           // Add edge highlight
           const edges = new THREE.EdgesGeometry(geometry);
@@ -270,12 +273,42 @@ export default function Viewer3D() {
           );
           line.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
           line.rotation.y = -angle;
-          scene.add(line);
+          modelGroup.add(line);
         }
       } catch (error) {
         console.error('Error creating 3D element:', error);
       }
     });
+
+    const boundingBox = new THREE.Box3().setFromObject(modelGroup);
+    if (!boundingBox.isEmpty()) {
+      const size = boundingBox.getSize(new THREE.Vector3());
+      const center = boundingBox.getCenter(new THREE.Vector3());
+      const boundingSphere = boundingBox.getBoundingSphere(new THREE.Sphere());
+      const fovInRadians = (camera.fov * Math.PI) / 180;
+      const fitHeightDistance = boundingSphere.radius / Math.sin(fovInRadians / 2);
+      const fitWidthDistance = fitHeightDistance / Math.max(camera.aspect, 1);
+      const fitDistance = Math.max(fitHeightDistance, fitWidthDistance, 120);
+
+      camera.position.set(
+        center.x + fitDistance * 0.7,
+        center.y + fitDistance * 0.45,
+        center.z + fitDistance * 0.7
+      );
+      camera.near = Math.max(0.1, fitDistance / 500);
+      camera.far = fitDistance * 30;
+      camera.updateProjectionMatrix();
+      camera.lookAt(center);
+
+      directionalLight.position.set(
+        center.x + fitDistance,
+        center.y + fitDistance,
+        center.z + fitDistance
+      );
+
+      gridHelper.position.set(center.x, boundingBox.min.y - 20, center.z);
+      axesHelper.position.copy(center);
+    }
 
     // Animation loop
     let rotationY = 0;

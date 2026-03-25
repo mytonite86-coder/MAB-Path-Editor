@@ -182,42 +182,46 @@ class AICADService:
         Returns:
             Dictionary with CAD elements and description
         """
-        system_message = """You are an expert 3D CAD designer. Convert user descriptions into a SINGLE solid 3D object.
+        system_message = """You are an expert CAD designer. Convert user descriptions into CAD elements for an 800x600 canvas.
 
-CRITICAL: For any 3D object (box, cube, cylinder), create ONE element that represents the entire solid object.
-
-Return your response as a JSON object:
+Return ONLY a JSON object with this structure:
 {
     "description": "Brief description",
     "elements": [
         {
-            "type": "rectangle" (for boxes/cubes) or "circle" (for cylinders),
-            "points": [[x1, y1], [x2, y2]] for rectangle center, or [[x, y]] for circle center,
+            "type": "line|rectangle|circle|polygon|text",
+            "points": [[x1, y1], [x2, y2], ...],
             "properties": {
                 "color": "#000000",
                 "strokeWidth": 2,
-                "depth": THE_FULL_HEIGHT_IN_MM,
-                "filled": true
+                "depth": 10,
+                "filled": false,
+                "radius": 20,
+                "text": "label",
+                "label": "part name"
             }
         }
     ]
 }
 
-EXAMPLES:
-- "50mm x 30mm x 20mm block":
-  * ONE rectangle: width=50, height=30 in 2D
-  * depth=20 (the FULL 20mm height)
-  * Points: [[375, 285], [425, 315]] (centered at 400,300)
+CRITICAL RULES:
+1. For simple primitive solids (single box, block, cube, cylinder), use ONE solid element.
+2. For detailed prompts (frames, furniture, rooms, layouts, assemblies, multi-part objects), use MULTIPLE logical elements.
+3. Never collapse a detailed prompt into one giant bounding rectangle unless the user explicitly requests a wall, slab, panel, or block.
+4. Every drawable element MUST include a numeric depth in millimeters.
+5. Use realistic per-part depth values:
+   - thin members/walls/legs/beams: usually 5-100mm
+   - tabletops/panels/plates: usually 10-80mm
+   - tall object height should usually be represented by multiple parts, not one oversized footprint extrusion
+6. If the prompt describes a structure with legs, rails, openings, rooms, doors, windows, shelves, or posts, model those as separate elements.
+7. Keep all geometry proportional and centered near the canvas.
 
-- "40mm diameter x 60mm tall cylinder":
-  * ONE circle: radius=20
-  * depth=60 (the FULL 60mm height)
-  * Points: [[400, 300]]
+GOOD EXAMPLES:
+- "50mm x 30mm x 20mm block" -> one rectangle with depth 20
+- "simple table with top and four legs" -> one tabletop rectangle + four leg rectangles, each with appropriate depth
+- "room with door and window" -> multiple wall/door/window elements, not one solid box
 
-COORDINATE SYSTEM: Canvas is 800x600, center at (400, 300)
-
-DO NOT create multiple faces or walls - create ONE solid element with its full depth.
-Return ONLY valid JSON, no markdown or explanation."""
+Return valid JSON only. No markdown. No explanation."""
         
         primitive_result = self._build_primitive_from_prompt(prompt)
         if primitive_result:
@@ -320,6 +324,7 @@ Return your response as a JSON object with this structure:
                 "color": "#hexcolor",
                 "strokeWidth": number,
                 "layer": "layer_name",
+                "depth": number (in mm, default 10 for thin features, larger only for real solid parts),
                 "filled": boolean,
                 "radius": number (for circles),
                 "text": "text content" (for annotations),
@@ -353,7 +358,9 @@ IMPORTANT:
 - Return ONLY the JSON object, no additional text
 - Extract AS MANY elements as you can identify in the drawing
 - Be generous with detection - if it looks like a line or shape, include it
-- Add descriptive labels to help user understand what each element represents"""
+- Add descriptive labels to help user understand what each element represents
+- Every drawable element must include a numeric depth value
+- Only use large depth values when the image clearly represents a true solid part"""
         
         try:
             chat = LlmChat(
@@ -390,8 +397,18 @@ IMPORTANT:
                 cleaned_response = cleaned_response.strip()
                 
                 cad_data = json.loads(cleaned_response)
+                elements = cad_data.get("elements", [])
+
+                for elem in elements:
+                    if "properties" not in elem:
+                        elem["properties"] = {}
+                    if "depth" not in elem.get("properties", {}):
+                        elem["properties"]["depth"] = 10
+                    if "filled" not in elem.get("properties", {}):
+                        elem["properties"]["filled"] = elem.get("type") in {"rectangle", "circle", "polygon"}
+
                 return {
-                    "elements": cad_data.get("elements", []),
+                    "elements": elements,
                     "description": cad_data.get("description", "CAD drawing from image"),
                     "generation_id": str(uuid.uuid4())
                 }
