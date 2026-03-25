@@ -1,0 +1,145 @@
+{
+  "project_name": "AI-Powered Mobile CAD Application",
+  "theme": "dark",
+  "archetype": "The Performance Pro",
+  "typography": {
+    "headings": {
+      "fontFamily": "IBM Plex Sans",
+      "weights": ["font-semibold", "font-bold", "font-black"],
+      "tracking": "tracking-tight",
+      "usage": "Use for tool titles, panel headers, and empty state messages."
+    },
+    "body": {
+      "fontFamily": "JetBrains Mono",
+      "weights": ["font-light", "font-normal", "font-medium"],
+      "leading": "leading-relaxed",
+      "usage": "Use for coordinate readouts, dimension values, tree history nodes, and property labels."
+    },
+    "labels": {
+      "styling": "uppercase text-[10px] md:text-xs tracking-[0.2em] font-bold text-white/50",
+      "usage": "Use for section overlines (e.g., 'CONSTRAINTS', 'SKETCH TOOLS')."
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "#0A0A0A",
+      "secondary": "#151518",
+      "canvas": "#111115",
+      "glass": "rgba(0,0,0,0.6)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1A6",
+      "disabled": "#4A4A52"
+    },
+    "accent": {
+      "primary": "#007AFF",
+      "primaryHover": "#3395FF",
+      "danger": "#FF3B30",
+      "dangerHover": "#FF645A",
+      "success": "#32D74B",
+      "selection": "rgba(0, 122, 255, 0.15)"
+    },
+    "border": {
+      "subtle": "rgba(255,255,255,0.1)",
+      "focus": "rgba(0,122,255,0.5)"
+    },
+    "usage_rules": "No generic full-screen gradients. Use deep obsidian as anchor. Selection highlights and constraints must use Volt Blue or Electric Blaze to visually pop against the dark canvas."
+  },
+  "surfaces": {
+    "floating_bars": {
+      "type": "Glassmorphism",
+      "classes": "bg-black/60 backdrop-blur-xl backdrop-saturate-150 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-full",
+      "usage": "Top navigation and floating toolbars over the CAD canvas."
+    },
+    "bottom_sheets": {
+      "type": "Solid + Technical Edge",
+      "classes": "bg-[#151518] border-t border-white/10 shadow-[0_-8px_32px_rgba(0,0,0,0.5)] rounded-t-3xl",
+      "usage": "Property panels and FreeCAD-style Feature Tree."
+    },
+    "property_grid": {
+      "type": "Grid Borders",
+      "classes": "border-collapse border-y border-white/5",
+      "usage": "Rows inside the property editor for dense, structured data entry."
+    }
+  },
+  "layouts": {
+    "app_container": "h-[100dvh] w-full relative overflow-hidden bg-canvas text-white flex flex-col antialiased",
+    "canvas_layer": "absolute inset-0 z-0",
+    "ui_layer": "absolute inset-0 z-10 pointer-events-none flex flex-col justify-between",
+    "interactive_zones": "pointer-events-auto",
+    "spacing_philosophy": "Mobile first. Generous padding around the canvas to prevent accidental edge swipes. Dense vertical packing inside the property editor bottom sheet.",
+    "grid_system": "Mode B: High Density Grid. Use grid-cols-4 for tool matrices. Use col-span-1 for parameter labels, col-span-3 for inputs in property rows."
+  },
+  "components": {
+    "FloatingToolbar": "A crystal-glass pill positioned at the bottom center or side for core modeling actions (Sketch, Extrude, Fillet). Must use flex row with gap-2 and p-2.",
+    "BottomSheet": "Draggable panel containing Tabs (Tree / Properties). Use h-[40vh] extending to h-[80vh] on drag. Content overflow-y-auto.",
+    "FeatureTree": "A hierarchical list. Nodes must have a left border to show depth. Selected nodes get border-l-2 border-[#007AFF] and bg-selection.",
+    "PropertyInput": "No default HTML inputs. Use 1px solid border bottom, bg-transparent, focus:border-[#007AFF]. Integrate '+' and '-' micro-buttons for numerical nudging.",
+    "ViewCube": "Floating 3D orientation control in top-right. Rendered via R3F or CSS 3D transforms. Opacity 60% default, 100% on hover/press."
+  },
+  "motion": {
+    "transitions": "Avoid 'transition-all'. Use specific properties: 'transition-[transform,opacity,background-color] duration-200 ease-out'.",
+    "hover_active": "Tools scale slightly on press 'active:scale-95'. Selected items pulse once. Snappy, immediate feedback required for CAD.",
+    "entrance": "Staggered fade-up for feature tree items ('translate-y-4 opacity-0' to 'translate-y-0 opacity-100').",
+    "accessibility": "Respect 'prefers-reduced-motion'. Add 'aria-hidden=\"true\"' to decorative animations."
+  },
+  "accessibility": {
+    "touch_targets": "Minimum 44x44px for all interactable buttons, even if the icon is smaller (pad the tap area).",
+    "contrast": "Text must meet WCAG AA (4.5:1) against the dark background. Active icons must be distinct.",
+    "focus": "focus-visible:ring-2 focus-visible:ring-[#007AFF] focus-visible:outline-none focus-visible:ring-offset-2 focus-visible:ring-offset-[#151518]"
+  },
+  "media": {
+    "strategy": "Minimal photography in core app. Only use high-contrast, technical blueprint imagery for onboarding, empty states, or AI generation prompts.",
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1762146828422-50a8bd416d3c?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "category": "onboarding_background",
+        "description": "Architectural blueprints spread out on a surface. Use with heavy dark overlay (black/80) to introduce the AI CAD tool."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1764740109279-c7a8abd78821?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "category": "empty_state",
+        "description": "Desk with laptop, blueprints, and tools. Use in the 'Projects' dashboard when no sketches exist."
+      }
+    ]
+  },
+  "3d_libraries": {
+    "core": "@react-three/fiber, three",
+    "helpers": "@react-three/drei (for <Environment>, <GizmoHelper>, <OrbitControls>)",
+    "gestures": "@use-gesture/react (for pinch/zoom/pan mobile handling)",
+    "rule": "Keep background transparent inside the WebGL canvas to blend with Tailwind background classes. Optimize geometries for mobile rendering."
+  },
+  "icons": {
+    "library": "lucide-react or @phosphor-icons/react (Duotone)",
+    "usage": "Use stroke-width 1.5 or 2. Clean, geometric representations of CAD tools (Cube, PenTool, Layers, Sliders, Play)."
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use `sonner` for toasts. Sonner component are located in /app/src/components/ui/sonner.js",
+    "All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing (e.g. data-testid=\"extrude-tool-button\").",
+    "You have .js files not .tsx file, so share the guideline for .js files not for .tsx files."
+  ],
+  "instructions_to_main_agent": {
+    "phase_execution": "Strictly implement the mobile UI using the specified 'Performance Pro' color palette and layout structures. The app must feel like a precision tool, not a playful app.",
+    "canvas_integration": "The 2D/3D canvas must sit at z-0. All UI (toolbars, bottom sheets) must float above it at z-10.",
+    "freecad_workflow": "Ensure the Feature Tree and Property Panel exist within a drag-to-expand Bottom Sheet to save screen space on mobile.",
+    "component_creation": "Build custom components for property rows (e.g., NumberSliderInput) rather than using standard generic inputs.",
+    "typography_enforcement": "Do NOT use Inter or Roboto. Use JetBrains Mono for all data/number readouts to reinforce the technical engineering feel."
+  }
+}
