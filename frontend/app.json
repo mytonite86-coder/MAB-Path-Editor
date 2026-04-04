@@ -1,20 +1,30 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "CAD Blueprint",
+    "slug": "cad-blueprint",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "cadblueprint",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.cadblueprint.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Select sketches for CAD conversion"
+        "NSPhotoLibraryUsageDescription": "Select sketches for CAD conversion",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "cadblueprint"
+            ]
+          }
+        ]
       }
     },
     "android": {
+      "package": "com.cadblueprint.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"

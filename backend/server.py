@@ -88,9 +88,27 @@ def get_stripe_checkout(request: Request) -> StripeCheckout:
 
 def validate_origin_url(origin_url: str) -> str:
     parsed = urlparse(origin_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return origin_url.rstrip("/")
+
+    if parsed.scheme and parsed.scheme not in {"http", "https"}:
+        return origin_url.rstrip("/")
+
         raise HTTPException(status_code=400, detail="Invalid origin URL")
-    return origin_url.rstrip("/")
+
+
+def build_checkout_return_urls(origin_url: str) -> tuple[str, str]:
+    parsed = urlparse(origin_url)
+
+    if parsed.scheme in {"http", "https"}:
+        success_url = f"{origin_url}/profile?session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
+        cancel_url = f"{origin_url}/profile?checkout=cancel"
+        return success_url, cancel_url
+
+    separator = "&" if "?" in origin_url else "?"
+    success_url = f"{origin_url}{separator}session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
+    cancel_url = f"{origin_url}{separator}checkout=cancel"
+    return success_url, cancel_url
 
 
 async def apply_premium_upgrade(session_id: str, user_id: str, status_payload) -> bool:
@@ -511,8 +529,7 @@ async def create_checkout_session(
         raise HTTPException(status_code=400, detail="Invalid package selected")
 
     origin_url = validate_origin_url(checkout_request.origin_url)
-    success_url = f"{origin_url}/profile?session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
-    cancel_url = f"{origin_url}/profile?checkout=cancel"
+    success_url, cancel_url = build_checkout_return_urls(origin_url)
 
     stripe_checkout = get_stripe_checkout(request)
     metadata = {

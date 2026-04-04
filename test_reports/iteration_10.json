@@ -1,0 +1,56 @@
+{
+  "summary": "Launch-readiness regression verified for release-prep scope. Backend accepted custom-scheme checkout origins, auth/profile APIs passed, and mobile web UI auth->home->profile->logout flow worked. One UI issue found on small screens with long usernames hiding the profile icon in home header.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Home header profile icon",
+        "issue": "With long usernames, header text can push the profile icon outside viewport on 375x667, making profile entry via top-right icon untappable.",
+        "testID": "home-profile-button",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Home",
+        "issues": [
+          "Header layout does not gracefully constrain long username text on narrow mobile width."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_release_prep_regression.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/iteration10_ui_smoke/iteration10_auth_loaded.jpeg",
+    "/app/test_reports/iteration10_ui_auth_profile_retry/iteration10_profile_loaded.jpeg",
+    "/app/test_reports/iteration10_ui_nonpremium_profile/iteration10_nonpremium_profile.jpeg"
+  ],
+  "action_items": [
+    "Constrain or truncate long greeting text in home header so home-profile-button always remains visible/tappable on 375x667.",
+    "Optional backend hardening: in validate_origin_url, unreachable raise should be moved out of the return branch to ensure malformed origin URLs return 400 consistently instead of potential 500."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py validate_origin_url has unreachable error handling after return; malformed values may bypass intended 400 handling.",
+    "Home header currently lacks robust overflow handling for long usernames on small mobile viewport."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_release_prep_regression.py",
+    "/app/test_reports/iteration_10.json"
+  ],
+  "success_rate": {
+    "backend": "100% (3/3 pytest)",
+    "frontend": "95% (all requested release-prep checks passed; 1 non-blocking mobile layout issue)"
+  },
+  "seed_data_creation": "Created TEST_releaseprep_* and tp* accounts for auth/profile/payment UI regression checks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Public preview was reachable; profile route and logout path were stable in this run. localstripe@example.com is premium so package cards are hidden there; use fresh non-premium accounts to validate package rendering.",
+  "rca_of_issue": "UI repro: register with long username, land on /home at 375x667, observe greeting text expansion; home-profile-button shifts out of viewport and cannot be tapped. Mitigation: add max width/flex-shrink/ellipsis to greeting container or enforce icon container fixed width.",
+  "mocked_api": "NO MOCKED APIs used."
+}

@@ -15,6 +15,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ExpoLinking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -78,7 +80,8 @@ export default function Profile() {
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
       return window.location.origin;
     }
-    throw new Error('Stripe checkout is available from the web preview right now.');
+
+    return ExpoLinking.createURL('profile');
   };
 
   const pollCheckoutStatus = async (sessionId: string) => {
@@ -207,7 +210,27 @@ export default function Profile() {
         return;
       }
 
-      await Linking.openURL(data.url);
+      const result = await WebBrowser.openAuthSessionAsync(data.url, getOriginUrl());
+      if (result.type === 'success' && result.url) {
+        const parsedUrl = ExpoLinking.parse(result.url);
+        const nextSessionId = typeof parsedUrl.queryParams?.session_id === 'string' ? parsedUrl.queryParams.session_id : undefined;
+        const nextCheckout = typeof parsedUrl.queryParams?.checkout === 'string' ? parsedUrl.queryParams.checkout : undefined;
+
+        if (nextCheckout === 'cancel') {
+          setPaymentTone('warning');
+          setPaymentMessage('Checkout was canceled. You can try again anytime.');
+          return;
+        }
+
+        if (nextSessionId) {
+          await pollCheckoutStatus(nextSessionId);
+          return;
+        }
+      }
+
+      if (result.type !== 'cancel') {
+        await Linking.openURL(data.url);
+      }
     } catch (error: any) {
       Alert.alert('Checkout Error', error.message || 'Unable to start checkout');
     } finally {
