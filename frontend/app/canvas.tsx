@@ -43,7 +43,7 @@ interface CADElement {
 }
 
 export default function Canvas() {
-  const { mode } = useLocalSearchParams();
+  const { mode, blueprintId } = useLocalSearchParams<{ mode?: string; blueprintId?: string }>();
   const { token, user, isGuest } = useAuth();
   const router = useRouter();
 
@@ -71,6 +71,7 @@ export default function Canvas() {
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [blueprintName, setBlueprintName] = useState('');
+  const [currentBlueprintId, setCurrentBlueprintId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const previousUnitRef = useRef<MeasurementUnit>('mm');
 
@@ -389,6 +390,40 @@ export default function Canvas() {
     }
   }, [mode]);
 
+  useEffect(() => {
+    if (!blueprintId || !token) {
+      return;
+    }
+
+    const loadBlueprint = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/blueprints/${blueprintId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load blueprint');
+        }
+
+        const data = await response.json();
+        setElements(normalizeElements(data.elements || []));
+        setFreecadFeatures([]);
+        setSelectedFeatureId(null);
+        setShowFeatureSheet(false);
+        setSelectedElementId(null);
+        setCurrentBlueprintId(data.id);
+        setBlueprintName(data.name || '');
+        setActiveTool('select');
+      } catch (error: any) {
+        Alert.alert('Load Error', error.message || 'Failed to load blueprint');
+      }
+    };
+
+    loadBlueprint();
+  }, [blueprintId, token]);
+
   const handleGenerateFromText = async () => {
     if (!textPrompt.trim()) {
       Alert.alert('Error', 'Please enter a description');
@@ -421,6 +456,7 @@ export default function Canvas() {
       setFreecadFeatures([]);
       setSelectedFeatureId(null);
       setShowFeatureSheet(false);
+      setCurrentBlueprintId(null);
       setActiveTool('select');
       setShowAIModal(false);
       setTextPrompt('');
@@ -489,6 +525,7 @@ export default function Canvas() {
       setFreecadFeatures([]);
       setSelectedFeatureId(null);
       setShowFeatureSheet(false);
+      setCurrentBlueprintId(null);
       setActiveTool('select');
       setShowAIModal(false);
       setSelectedImage(null);
@@ -527,8 +564,9 @@ export default function Canvas() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`${API_URL}/api/blueprints`, {
-        method: 'POST',
+      const isUpdatingBlueprint = Boolean(currentBlueprintId);
+      const response = await fetch(isUpdatingBlueprint ? `${API_URL}/api/blueprints/${currentBlueprintId}` : `${API_URL}/api/blueprints`, {
+        method: isUpdatingBlueprint ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -541,12 +579,13 @@ export default function Canvas() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save blueprint');
+        throw new Error(isUpdatingBlueprint ? 'Failed to update blueprint' : 'Failed to save blueprint');
       }
 
-      Alert.alert('Success', 'Blueprint saved successfully!');
+      const savedBlueprint = await response.json();
+      setCurrentBlueprintId(savedBlueprint.id);
+      Alert.alert('Success', isUpdatingBlueprint ? 'Blueprint updated successfully!' : 'Blueprint saved successfully!');
       setShowSaveModal(false);
-      setBlueprintName('');
     } catch (error: any) {
       console.error('Error saving blueprint:', error);
       Alert.alert('Error', error.message || 'Failed to save blueprint');
@@ -596,6 +635,8 @@ export default function Canvas() {
           setFreecadFeatures([]);
           setSelectedFeatureId(null);
           setShowFeatureSheet(false);
+          setCurrentBlueprintId(null);
+          setBlueprintName('');
           setSelectedElementId(null);
         }},
       ]

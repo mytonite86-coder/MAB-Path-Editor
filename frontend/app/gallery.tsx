@@ -25,15 +25,24 @@ interface Blueprint {
 }
 
 export default function Gallery() {
-  const { token } = useAuth();
+  const { token, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     loadBlueprints();
-  }, []);
+  }, [token, authLoading]);
 
   const loadBlueprints = async () => {
     try {
@@ -105,6 +114,13 @@ export default function Gallery() {
     });
   };
 
+  const handleViewBlueprint = (blueprint: Blueprint) => {
+    router.push({
+      pathname: '/canvas',
+      params: { blueprintId: blueprint.id },
+    });
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -117,20 +133,20 @@ export default function Gallery() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+    <SafeAreaView style={styles.container} testID="gallery-screen">
+      <View style={styles.header} testID="gallery-header">
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} testID="gallery-back-button">
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.title}>My Blueprints</Text>
-        <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
+        <Text style={styles.title} testID="gallery-title">My Blueprints</Text>
+        <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton} testID="gallery-refresh-button">
           <Ionicons name="refresh" size={24} color="#007AFF" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} testID="gallery-content-scroll">
         {blueprints.length === 0 ? (
-          <View style={styles.emptyState}>
+          <View style={styles.emptyState} testID="gallery-empty-state">
             <Ionicons name="folder-open-outline" size={64} color="#666" />
             <Text style={styles.emptyTitle}>No Blueprints Yet</Text>
             <Text style={styles.emptyText}>
@@ -139,6 +155,7 @@ export default function Gallery() {
             <TouchableOpacity
               style={styles.createButton}
               onPress={() => router.push('/canvas')}
+              testID="gallery-create-blueprint-button"
             >
               <Ionicons name="add-circle" size={20} color="#fff" />
               <Text style={styles.createButtonText}>Create Blueprint</Text>
@@ -146,7 +163,7 @@ export default function Gallery() {
           </View>
         ) : (
           blueprints.map((blueprint) => (
-            <View key={blueprint.id} style={styles.card}>
+            <View key={blueprint.id} style={styles.card} testID={`gallery-blueprint-card-${blueprint.id}`}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardIcon}>
                   <Ionicons name="document-outline" size={32} color="#007AFF" />
@@ -169,10 +186,8 @@ export default function Gallery() {
               <View style={styles.cardActions}>
                 <TouchableOpacity
                   style={styles.actionButton}
-                  onPress={() => {
-                    // TODO: Load blueprint in canvas
-                    Alert.alert('Coming Soon', 'Load blueprint feature coming soon');
-                  }}
+                  onPress={() => handleViewBlueprint(blueprint)}
+                  testID={`gallery-view-blueprint-button-${blueprint.id}`}
                 >
                   <Ionicons name="eye-outline" size={20} color="#007AFF" />
                   <Text style={styles.actionButtonText}>View</Text>
@@ -184,6 +199,7 @@ export default function Gallery() {
                     // TODO: Export blueprint
                     Alert.alert('Coming Soon', 'Export feature coming soon');
                   }}
+                  testID={`gallery-export-blueprint-button-${blueprint.id}`}
                 >
                   <Ionicons name="download-outline" size={20} color="#34C759" />
                   <Text style={styles.actionButtonText}>Export</Text>
@@ -192,6 +208,7 @@ export default function Gallery() {
                 <TouchableOpacity
                   style={styles.actionButton}
                   onPress={() => handleDelete(blueprint.id, blueprint.name)}
+                  testID={`gallery-delete-blueprint-button-${blueprint.id}`}
                 >
                   <Ionicons name="trash-outline" size={20} color="#FF3B30" />
                   <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>

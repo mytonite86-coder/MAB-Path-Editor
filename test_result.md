@@ -424,6 +424,24 @@ frontend:
         agent: "testing"
         comment: "✅ TESTED: Backend payment APIs passed, profile rendered the purchasable package, buy button launched real Stripe checkout, and legacy premium code activation still worked. No mocked APIs used."
 
+  - task: "Gallery Load Workflow"
+    implemented: true
+    working: true
+    file: "frontend/app/gallery.tsx, frontend/app/canvas.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "Launch-blocker regression found that saved blueprints appeared in gallery, but View was still a Coming Soon stub and did not load back into canvas."
+      - working: true
+        agent: "main"
+        comment: "Implemented gallery View -> canvas hydration using blueprintId route param, added gallery action testIDs, and updated canvas save flow so loaded blueprints save back through PUT instead of always creating a new record."
+      - working: true
+        agent: "main"
+        comment: "Self-tested authenticated save -> gallery -> view -> canvas -> 3D on localhost successfully. The saved line blueprint loaded and opened in 3D without the old gallery blocker."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true
