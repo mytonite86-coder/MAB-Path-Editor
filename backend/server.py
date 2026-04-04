@@ -94,7 +94,7 @@ def validate_origin_url(origin_url: str) -> str:
     if parsed.scheme and parsed.scheme not in {"http", "https"}:
         return origin_url.rstrip("/")
 
-        raise HTTPException(status_code=400, detail="Invalid origin URL")
+    raise HTTPException(status_code=400, detail="Invalid origin URL")
 
 
 def build_checkout_return_urls(origin_url: str) -> tuple[str, str]:

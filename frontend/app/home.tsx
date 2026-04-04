@@ -51,8 +51,8 @@ export default function Home() {
   return (
     <SafeAreaView style={styles.container} testID="home-screen">
       <View style={styles.header} testID="home-header">
-        <View>
-          <Text style={styles.greeting} testID="home-greeting">
+        <View style={styles.headerTextWrap}>
+          <Text style={styles.greeting} numberOfLines={1} ellipsizeMode="tail" testID="home-greeting">
             {isGuest ? 'Welcome, Guest!' : `Welcome, ${user?.username}!`}
           </Text>
           {user?.is_premium && (
@@ -65,7 +65,7 @@ export default function Home() {
             <Text style={styles.guestWarning} testID="home-guest-warning">Limited features in guest mode</Text>
           )}
         </View>
-        <TouchableOpacity onPress={() => router.push('/profile')} testID="home-profile-button">
+        <TouchableOpacity onPress={() => router.push('/profile')} style={styles.profileButton} testID="home-profile-button">
           <Ionicons name="person-circle-outline" size={40} color="#007AFF" />
         </TouchableOpacity>
       </View>
@@ -199,10 +199,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#1a1a1a',
   },
+  headerTextWrap: {
+    flex: 1,
+    marginRight: 12,
+  },
   greeting: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   premiumBadge: {
     flexDirection: 'row',
