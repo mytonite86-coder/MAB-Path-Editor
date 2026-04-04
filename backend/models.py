@@ -86,3 +86,32 @@ class ExportRequest(BaseModel):
     format: str  # 'png', 'pdf', 'dxf'
     width: int = 800
     height: int = 600
+
+
+class PaymentPackageResponse(BaseModel):
+    package_id: str
+    name: str
+    description: str
+    amount: float
+    currency: str
+    perks: List[str] = []
+
+
+class CreateCheckoutSessionRequest(BaseModel):
+    package_id: str
+    origin_url: str
+
+
+class CreateCheckoutSessionResponse(BaseModel):
+    url: str
+    session_id: str
+
+
+class PaymentStatusResponse(BaseModel):
+    session_id: str
+    package_id: str
+    status: str
+    payment_status: str
+    amount_total: int
+    currency: str
+    is_premium: bool

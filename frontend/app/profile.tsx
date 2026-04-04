@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,19 +8,123 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
+  Linking,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
+interface PaymentPackage {
+  package_id: string;
+  name: string;
+  description: string;
+  amount: number;
+  currency: string;
+  perks: string[];
+}
+
 export default function Profile() {
-  const { user, isGuest, logout, token } = useAuth();
+  const { user, isGuest, logout, token, refreshUser } = useAuth();
   const router = useRouter();
+  const { session_id, checkout } = useLocalSearchParams<{ session_id?: string; checkout?: string }>();
   const [premiumCode, setPremiumCode] = useState('');
   const [isActivating, setIsActivating] = useState(false);
+  const [packages, setPackages] = useState<PaymentPackage[]>([]);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(true);
+  const [isCreatingCheckout, setIsCreatingCheckout] = useState<string | null>(null);
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
+  const [paymentTone, setPaymentTone] = useState<'success' | 'warning' | 'info'>('info');
+  const handledSessionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    fetchPackages();
+  }, []);
+
+  useEffect(() => {
+    if (checkout === 'cancel') {
+      setPaymentTone('warning');
+      setPaymentMessage('Checkout was canceled. You can try again anytime.');
+    }
+  }, [checkout]);
+
+  useEffect(() => {
+    if (session_id && token && handledSessionRef.current !== session_id) {
+      handledSessionRef.current = session_id;
+      pollCheckoutStatus(session_id);
+    }
+  }, [session_id, token]);
+
+  const fetchPackages = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/payments/packages`);
+      if (!response.ok) {
+        throw new Error('Failed to load upgrade packages');
+      }
+      const data = await response.json();
+      setPackages(data);
+    } catch (error: any) {
+      setPaymentTone('warning');
+      setPaymentMessage(error.message || 'Failed to load upgrade packages');
+    } finally {
+      setIsLoadingPackages(false);
+    }
+  };
+
+  const getOriginUrl = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
+    throw new Error('Stripe checkout is available from the web preview right now.');
+  };
+
+  const pollCheckoutStatus = async (sessionId: string) => {
+    setPaymentTone('info');
+    setPaymentMessage('Checking payment status...');
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const response = await fetch(`${API_URL}/api/payments/checkout/status/${sessionId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to verify payment status');
+        }
+
+        const data = await response.json();
+        if (data.payment_status === 'paid') {
+          await refreshUser();
+          setPaymentTone('success');
+          setPaymentMessage('Payment successful. Premium has been unlocked on your account.');
+          return;
+        }
+
+        if (data.status === 'expired') {
+          setPaymentTone('warning');
+          setPaymentMessage('This checkout session expired. Please start a new payment.');
+          return;
+        }
+
+        setPaymentTone('info');
+        setPaymentMessage('Payment is being processed...');
+      } catch (error: any) {
+        setPaymentTone('warning');
+        setPaymentMessage(error.message || 'Unable to verify payment status right now.');
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    setPaymentTone('warning');
+    setPaymentMessage('Payment is still processing. Please check again in a moment.');
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -61,9 +165,7 @@ export default function Profile() {
       const data = await response.json();
       Alert.alert('Success', data.message);
       setPremiumCode('');
-      
-      // Refresh the page or update user state
-      Alert.alert('Please Re-login', 'Please logout and login again to see premium features');
+      await refreshUser();
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to activate premium');
     } finally {
@@ -71,19 +173,56 @@ export default function Profile() {
     }
   };
 
+  const handleBuyUpgrade = async (packageId: string) => {
+    if (!token) {
+      Alert.alert('Login Required', 'Please log in to purchase a premium upgrade.');
+      return;
+    }
+
+    setIsCreatingCheckout(packageId);
+    try {
+      const originUrl = getOriginUrl();
+      const response = await fetch(`${API_URL}/api/payments/checkout/session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ package_id: packageId, origin_url: originUrl }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Unable to start checkout');
+      }
+
+      const data = await response.json();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.href = data.url;
+        return;
+      }
+
+      await Linking.openURL(data.url);
+    } catch (error: any) {
+      Alert.alert('Checkout Error', error.message || 'Unable to start checkout');
+    } finally {
+      setIsCreatingCheckout(null);
+    }
+  };
+
   if (isGuest) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <View style={styles.header} testID="profile-header">
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} testID="profile-back-button">
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.title}>Profile</Text>
+          <Text style={styles.title} testID="profile-title">Profile</Text>
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView style={styles.content}>
-          <View style={styles.guestCard}>
+        <ScrollView style={styles.content} testID="profile-guest-scroll">
+          <View style={styles.guestCard} testID="profile-guest-card">
             <Ionicons name="person-circle-outline" size={80} color="#666" />
             <Text style={styles.guestTitle}>Guest Mode</Text>
             <Text style={styles.guestText}>
@@ -111,6 +250,7 @@ export default function Profile() {
             <TouchableOpacity
               style={styles.signUpButton}
               onPress={() => router.replace('/auth')}
+              testID="profile-create-account-button"
             >
               <Text style={styles.signUpButtonText}>Create Account</Text>
             </TouchableOpacity>
@@ -122,23 +262,36 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <View style={styles.header} testID="profile-header">
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} testID="profile-back-button">
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.title}>Profile</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+        <Text style={styles.title} testID="profile-title">Profile</Text>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton} testID="profile-logout-button">
           <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        <View style={styles.profileCard}>
+      <ScrollView style={styles.content} testID="profile-screen-scroll">
+        {paymentMessage && (
+          <View
+            style={[
+              styles.statusCard,
+              paymentTone === 'success' && styles.statusCardSuccess,
+              paymentTone === 'warning' && styles.statusCardWarning,
+            ]}
+            testID="profile-payment-status-card"
+          >
+            <Text style={styles.statusText}>{paymentMessage}</Text>
+          </View>
+        )}
+
+        <View style={styles.profileCard} testID="profile-user-card">
           <Ionicons name="person-circle" size={80} color="#007AFF" />
-          <Text style={styles.username}>{user?.username}</Text>
-          <Text style={styles.email}>{user?.email}</Text>
+          <Text style={styles.username} testID="profile-username">{user?.username}</Text>
+          <Text style={styles.email} testID="profile-email">{user?.email}</Text>
           {user?.is_premium && (
-            <View style={styles.premiumBadgeLarge}>
+            <View style={styles.premiumBadgeLarge} testID="profile-premium-badge">
               <Ionicons name="star" size={20} color="#FFD700" />
               <Text style={styles.premiumBadgeText}>Premium Member</Text>
             </View>
@@ -146,7 +299,7 @@ export default function Profile() {
         </View>
 
         {!user?.is_premium && (
-          <View style={styles.upgradeCard}>
+          <View style={styles.upgradeCard} testID="profile-upgrade-card">
             <View style={styles.upgradeHeader}>
               <Ionicons name="star" size={32} color="#FFD700" />
               <Text style={styles.upgradeTitle}>Upgrade to Premium</Text>
@@ -174,6 +327,43 @@ export default function Profile() {
               </View>
             </View>
 
+            <Text style={styles.sectionLabel}>Purchaseable Upgrades</Text>
+            {isLoadingPackages ? (
+              <ActivityIndicator color="#FFD700" style={styles.packageLoader} />
+            ) : (
+              packages.map((upgradePackage) => (
+                <View key={upgradePackage.package_id} style={styles.packageCard} testID={`profile-package-${upgradePackage.package_id}`}>
+                  <View style={styles.packageHeader}>
+                    <View style={styles.packageTextWrap}>
+                      <Text style={styles.packageTitle}>{upgradePackage.name}</Text>
+                      <Text style={styles.packageDescription}>{upgradePackage.description}</Text>
+                    </View>
+                    <Text style={styles.packagePrice}>${upgradePackage.amount.toFixed(2)}</Text>
+                  </View>
+
+                  {upgradePackage.perks.map((perk, index) => (
+                    <View key={`${upgradePackage.package_id}-${index}`} style={styles.packagePerkRow}>
+                      <Ionicons name="checkmark-circle" size={18} color="#34C759" />
+                      <Text style={styles.packagePerkText}>{perk}</Text>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    style={[styles.buyButton, isCreatingCheckout === upgradePackage.package_id && styles.activateButtonDisabled]}
+                    onPress={() => handleBuyUpgrade(upgradePackage.package_id)}
+                    disabled={isCreatingCheckout === upgradePackage.package_id}
+                    testID={`profile-buy-${upgradePackage.package_id}-button`}
+                  >
+                    {isCreatingCheckout === upgradePackage.package_id ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <Text style={styles.buyButtonText}>Buy Premium Upgrade</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+
             <Text style={styles.codeLabel}>Have a premium code?</Text>
             <TextInput
               style={styles.codeInput}
@@ -182,12 +372,14 @@ export default function Profile() {
               value={premiumCode}
               onChangeText={setPremiumCode}
               autoCapitalize="characters"
+              testID="profile-premium-code-input"
             />
 
             <TouchableOpacity
               style={[styles.activateButton, isActivating && styles.activateButtonDisabled]}
               onPress={handleActivatePremium}
               disabled={isActivating}
+              testID="profile-activate-premium-button"
             >
               {isActivating ? (
                 <ActivityIndicator color="#fff" />
@@ -197,12 +389,12 @@ export default function Profile() {
             </TouchableOpacity>
 
             <Text style={styles.bypassHint}>
-              🎁 Bypass Code: CAD_PREMIUM_2025
+              Test bypass code: CAD_PREMIUM_2025
             </Text>
           </View>
         )}
 
-        <View style={styles.infoCard}>
+        <View style={styles.infoCard} testID="profile-info-card">
           <Text style={styles.infoTitle}>About</Text>
           <Text style={styles.infoText}>
             CAD Blueprint - AI-Powered Blueprint Creation
@@ -243,6 +435,25 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+  },
+  statusCard: {
+    backgroundColor: '#111115',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  statusCardSuccess: {
+    borderColor: '#34C759',
+  },
+  statusCardWarning: {
+    borderColor: '#FF9500',
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
   },
   profileCard: {
     backgroundColor: '#1a1a1a',
@@ -305,6 +516,74 @@ const styles = StyleSheet.create({
   },
   premiumFeatures: {
     marginBottom: 24,
+  },
+  sectionLabel: {
+    color: '#8E8E93',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
+  packageLoader: {
+    marginBottom: 20,
+  },
+  packageCard: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 16,
+  },
+  packageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  packageTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  packageTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  packageDescription: {
+    color: '#A1A1A6',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  packagePrice: {
+    color: '#FFD700',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  packagePerkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  packagePerkText: {
+    color: '#fff',
+    fontSize: 14,
+    marginLeft: 10,
+    flex: 1,
+  },
+  buyButton: {
+    backgroundColor: '#FFD700',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  buyButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '800',
   },
   premiumFeature: {
     flexDirection: 'row',

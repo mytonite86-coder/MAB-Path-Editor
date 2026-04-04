@@ -13,6 +13,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isGuest: boolean;
+  refreshUser: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -51,6 +52,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const refreshUser = async () => {
+    const activeToken = token || (await AsyncStorage.getItem('authToken'));
+    if (!activeToken) {
+      return;
+    }
+
+    const response = await fetch(`${API_URL}/api/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${activeToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to refresh user');
+    }
+
+    const refreshedUser = await response.json();
+    setUser(refreshedUser);
+    setToken(activeToken);
+    await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
+    await AsyncStorage.setItem('authToken', activeToken);
   };
 
   const login = async (email: string, password: string) => {
@@ -134,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         token,
         isLoading,
         isGuest,
+        refreshUser,
         login,
         register,
         logout,

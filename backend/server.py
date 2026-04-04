@@ -1,18 +1,25 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from bson import ObjectId
+from urllib.parse import urlparse
+from emergentintegrations.payments.stripe.checkout import (
+    StripeCheckout,
+    CheckoutSessionRequest,
+)
 
 from models import (
     UserCreate, UserLogin, TokenResponse, UserResponse,
     BlueprintCreate, BlueprintUpdate, BlueprintResponse,
-    TextToCADRequest, ImageToCADRequest, AICADResponse
+    TextToCADRequest, ImageToCADRequest, AICADResponse,
+    PaymentPackageResponse, CreateCheckoutSessionRequest,
+    CreateCheckoutSessionResponse, PaymentStatusResponse
 )
 from auth import (
     get_password_hash, verify_password, create_access_token,
@@ -33,6 +40,7 @@ db = client[os.environ['DB_NAME']]
 users_collection = db.users
 blueprints_collection = db.blueprints
 ai_generations_collection = db.ai_generations
+payment_transactions_collection = db.payment_transactions
 
 # Create the main app without a prefix
 app = FastAPI(title="CAD Blueprint API")
@@ -49,6 +57,75 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+
+PREMIUM_PACKAGES = {
+    "premium_lifetime": {
+        "package_id": "premium_lifetime",
+        "name": "Premium Lifetime Upgrade",
+        "description": "Unlock unlimited AI generations and premium CAD tools.",
+        "amount": 19.99,
+        "currency": "usd",
+        "perks": [
+            "Unlimited AI generations",
+            "Advanced Part Design tools",
+            "Premium export features",
+            "Priority image-to-CAD processing",
+        ],
+    }
+}
+
+
+def get_stripe_checkout(request: Request) -> StripeCheckout:
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe API key is not configured")
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    return StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
+
+def validate_origin_url(origin_url: str) -> str:
+    parsed = urlparse(origin_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Invalid origin URL")
+    return origin_url.rstrip("/")
+
+
+async def apply_premium_upgrade(session_id: str, user_id: str, status_payload) -> bool:
+    transaction = await payment_transactions_collection.find_one({"session_id": session_id})
+    if not transaction:
+        return False
+
+    if transaction.get("processed_upgrade"):
+        return True
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_result = await payment_transactions_collection.update_one(
+        {"session_id": session_id, "processed_upgrade": {"$ne": True}},
+        {
+            "$set": {
+                "status": status_payload.status,
+                "payment_status": status_payload.payment_status,
+                "amount_total": status_payload.amount_total,
+                "currency": status_payload.currency,
+                "metadata": status_payload.metadata,
+                "processed_upgrade": True,
+                "processed_at": now_iso,
+                "updated_at": now_iso,
+            }
+        },
+    )
+
+    if update_result.modified_count == 0:
+        return True
+
+    await users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"is_premium": True}},
+    )
+    return True
 
 
 # --------------------- AUTH ENDPOINTS ---------------------
@@ -416,6 +493,159 @@ async def activate_premium(
         return {"message": "Premium activated successfully!", "is_premium": True}
     else:
         raise HTTPException(status_code=400, detail="Invalid premium code")
+
+
+@api_router.get("/payments/packages", response_model=List[PaymentPackageResponse])
+async def get_payment_packages():
+    return [PaymentPackageResponse(**package) for package in PREMIUM_PACKAGES.values()]
+
+
+@api_router.post("/payments/checkout/session", response_model=CreateCheckoutSessionResponse)
+async def create_checkout_session(
+    checkout_request: CreateCheckoutSessionRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    package = PREMIUM_PACKAGES.get(checkout_request.package_id)
+    if not package:
+        raise HTTPException(status_code=400, detail="Invalid package selected")
+
+    origin_url = validate_origin_url(checkout_request.origin_url)
+    success_url = f"{origin_url}/profile?session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
+    cancel_url = f"{origin_url}/profile?checkout=cancel"
+
+    stripe_checkout = get_stripe_checkout(request)
+    metadata = {
+        "user_id": current_user["user_id"],
+        "user_email": current_user["email"],
+        "package_id": package["package_id"],
+        "upgrade_type": "premium",
+    }
+
+    session = await stripe_checkout.create_checkout_session(
+        CheckoutSessionRequest(
+            amount=float(package["amount"]),
+            currency=package["currency"],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+        )
+    )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    transaction_doc = {
+        "session_id": session.session_id,
+        "payment_id": session.session_id,
+        "user_id": current_user["user_id"],
+        "email": current_user["email"],
+        "package_id": package["package_id"],
+        "amount": package["amount"],
+        "currency": package["currency"],
+        "metadata": metadata,
+        "status": "open",
+        "payment_status": "pending",
+        "processed_upgrade": False,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await payment_transactions_collection.insert_one(transaction_doc)
+
+    return CreateCheckoutSessionResponse(url=session.url, session_id=session.session_id)
+
+
+@api_router.get("/payments/checkout/status/{session_id}", response_model=PaymentStatusResponse)
+async def get_checkout_status(
+    session_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    transaction = await payment_transactions_collection.find_one(
+        {"session_id": session_id, "user_id": current_user["user_id"]},
+        {"_id": 0},
+    )
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Payment session not found")
+
+    stripe_checkout = get_stripe_checkout(request)
+    status_payload = await stripe_checkout.get_checkout_status(session_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    await payment_transactions_collection.update_one(
+        {"session_id": session_id},
+        {
+            "$set": {
+                "status": status_payload.status,
+                "payment_status": status_payload.payment_status,
+                "amount_total": status_payload.amount_total,
+                "currency": status_payload.currency,
+                "metadata": status_payload.metadata,
+                "updated_at": now_iso,
+            }
+        },
+    )
+
+    if status_payload.payment_status == "paid":
+        await apply_premium_upgrade(session_id, current_user["user_id"], status_payload)
+
+    user_doc = await users_collection.find_one(
+        {"_id": ObjectId(current_user["user_id"])},
+        {"_id": 0, "is_premium": 1},
+    )
+
+    return PaymentStatusResponse(
+        session_id=session_id,
+        package_id=transaction["package_id"],
+        status=status_payload.status,
+        payment_status=status_payload.payment_status,
+        amount_total=status_payload.amount_total,
+        currency=status_payload.currency,
+        is_premium=bool(user_doc and user_doc.get("is_premium")),
+    )
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    stripe_checkout = get_stripe_checkout(request)
+    body = await request.body()
+    webhook_response = await stripe_checkout.handle_webhook(
+        body,
+        request.headers.get("Stripe-Signature"),
+    )
+
+    session_id = webhook_response.session_id
+    if session_id:
+        transaction = await payment_transactions_collection.find_one(
+            {"session_id": session_id},
+            {"_id": 0, "user_id": 1},
+        )
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await payment_transactions_collection.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "status": webhook_response.event_type,
+                    "payment_status": webhook_response.payment_status,
+                    "metadata": webhook_response.metadata,
+                    "updated_at": now_iso,
+                }
+            },
+        )
+
+        if (
+            webhook_response.payment_status == "paid"
+            and transaction
+            and transaction.get("user_id")
+        ):
+            class StatusPayload:
+                status = webhook_response.event_type
+                payment_status = webhook_response.payment_status
+                amount_total = 0
+                currency = "usd"
+                metadata = webhook_response.metadata or {}
+
+            await apply_premium_upgrade(session_id, transaction["user_id"], StatusPayload())
+
+    return {"received": True, "event_type": webhook_response.event_type}
 
 
 # --------------------- HEALTH CHECK ---------------------
