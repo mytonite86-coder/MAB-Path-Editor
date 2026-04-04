@@ -327,7 +327,7 @@ export default function Profile() {
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>Purchaseable Upgrades</Text>
+            <Text style={styles.sectionLabel}>Purchasable Upgrades</Text>
             {isLoadingPackages ? (
               <ActivityIndicator color="#FFD700" style={styles.packageLoader} />
             ) : (

@@ -406,6 +406,24 @@ frontend:
         agent: "main"
         comment: "Added a large in-flow Done button using the original close testID and self-retested repeated close interactions on 375x667 across Pad/Pocket/Chamfer sheets successfully."
 
+  - task: "Stripe Premium Upgrades"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/models.py, frontend/app/profile.tsx, frontend/context/AuthContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added purchasable premium upgrades with Stripe checkout sessions, payment status polling, webhook handling, and premium-account unlock on successful payment. Legacy premium code flow was preserved."
+      - working: true
+        agent: "main"
+        comment: "Self-tested backend end-to-end: package listing, checkout session creation, pre-payment status check, and local frontend Stripe redirect launch."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Backend payment APIs passed, profile rendered the purchasable package, buy button launched real Stripe checkout, and legacy premium code activation still worked. No mocked APIs used."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true

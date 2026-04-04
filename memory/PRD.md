@@ -45,6 +45,8 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Added first-pass **Part Design tools** to the FreeCAD-style workflow: **Pocket, Chamfer, Fillet, and Mirror**.
 - Pad features can now generate **profile-based solids** with cutouts/chamfered or filleted outlines, and mirrored copies render in the 3D viewer.
 - Property sheet now adapts its fields by feature type, and the mobile close action was hardened with a large in-flow Done button for repeated small-screen use.
+- Added real **Stripe premium checkout** in the profile flow with purchasable upgrades, checkout-session creation, payment-status polling, and backend premium unlock after successful payment.
+- Legacy premium bypass code remains available alongside Stripe purchases.
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`
