@@ -442,6 +442,21 @@ frontend:
         agent: "main"
         comment: "Self-tested authenticated save -> gallery -> view -> canvas -> 3D on localhost successfully. The saved line blueprint loaded and opened in 3D without the old gallery blocker."
 
+  - task: "Launch Hardening - Logout Reliability"
+    implemented: true
+    working: true
+    file: "frontend/app/profile.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "Final launch blocker pass found profile logout did not complete reliably in web preview after tapping the logout button."
+      - working: true
+        agent: "main"
+        comment: "Adjusted profile logout so web preview performs immediate logout + auth redirect without depending on the native confirmation alert path. Self-tested login -> profile -> logout -> auth successfully on localhost web."
+
   - task: "Blueprint Gallery"
     implemented: true
     working: true

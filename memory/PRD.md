@@ -48,6 +48,7 @@ Build an Expo-based AI-powered mobile CAD application for blueprint creation wit
 - Added real **Stripe premium checkout** in the profile flow with purchasable upgrades, checkout-session creation, payment-status polling, and backend premium unlock after successful payment.
 - Legacy premium bypass code remains available alongside Stripe purchases.
 - Fixed the **gallery load workflow** so saved blueprints can be opened back into the canvas, edited, and viewed in 3D. Loaded blueprints now hydrate canvas state and subsequent saves update the existing blueprint instead of always creating a new one.
+- Fixed the final launch-hardening auth issue on web preview: **profile logout** now exits reliably back to the auth screen.
 
 ## Current Validated Status
 - Text prompt `Create a solid 50mm x 30mm x 20mm rectangular block` returns one rectangle with `depth: 20`

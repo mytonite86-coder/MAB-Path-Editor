@@ -127,6 +127,11 @@ export default function Profile() {
   };
 
   const handleLogout = () => {
+    if (Platform.OS === 'web') {
+      logout().then(() => router.replace('/auth'));
+      return;
+    }
+
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
