@@ -44,11 +44,17 @@ setFileContent(lines);                    // 👈 ADD THIS
     {fileName !== '' && (
   <View style={styles.panel}>
     <Text style={styles.panelTitle}>{fileName}</Text>
-    {fileContent.slice(0, 50).map((line, i) => (
-  <Text key={i} style={styles.panelText}>
+   {fileContent.slice(0, 50).map((line, i) => (
+  <Text
+    key={i}
+    style={[
+      styles.panelText,
+      line.includes('G') && { color: '#4FC3F7' }, // highlight G-code
+    ]}
+  >
     {line}
   </Text>
-))}
+))} 
 
   </View>
 )}
