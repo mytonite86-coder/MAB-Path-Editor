@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 export default function Path() {
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [fileName, setFileName] = useState('');
   return (
@@ -47,14 +48,16 @@ setFileContent(lines);                    // 👈 ADD THIS
    {fileContent.slice(0, 50).map((line, i) => (
   <Text
     key={i}
+    onPress={() => setSelectedLine(i)}
     style={[
       styles.panelText,
-      line.includes('G') && { color: '#4FC3F7' }, // highlight G-code
+      line.includes('G') && { color: '#4FC3F7' },
+      selectedLine === i && { backgroundColor: '#333' },
     ]}
   >
-    {line}
+    {i + 1}. {line}
   </Text>
-))} 
+))}
 
   </View>
 )}
