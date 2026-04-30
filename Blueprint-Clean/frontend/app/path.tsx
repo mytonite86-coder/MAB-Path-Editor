@@ -70,7 +70,11 @@ setFileContent(lines);                    // 👈 ADD THIS
 
     <View style={styles.panel}>
       <Text style={styles.panelTitle}>G-Code</Text>
-      <Text style={styles.panelText}>Selected line details will show here.</Text>
+      <Text style={styles.panelText}>
+  {selectedLine !== null
+    ? fileContent[selectedLine]
+    : 'Select a line above'}
+</Text>
     </View>
   </ScrollView>
 );
