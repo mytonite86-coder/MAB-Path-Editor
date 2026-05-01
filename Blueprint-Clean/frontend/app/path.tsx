@@ -4,10 +4,18 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 export default function Path() {
-  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+ const [selectedLine, setSelectedLine] = useState<number | null>(null);
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [fileName, setFileName] = useState('');
-  return (
+
+const parsedCoords = selectedLine !== null
+  ? {
+      x: parseFloat(fileContent[selectedLine].match(/X-?\d+\.?\d*/)?.[0]?.slice(1) || '0'),
+      y: parseFloat(fileContent[selectedLine].match(/Y-?\d+\.?\d*/)?.[0]?.slice(1) || '0'),
+    }
+  : null;
+
+return ( 
   <ScrollView style={styles.container}>
     <Text style={styles.title}>Path Edit</Text>
     <Text style={styles.subtitle}>
@@ -74,6 +82,10 @@ setFileContent(lines);                    // 👈 ADD THIS
   {selectedLine !== null
     ? fileContent[selectedLine]
     : 'Select a line above'}
+</Text>
+<Text style={styles.panelText}>
+  X: {parsedCoords ? parsedCoords.x : '—'}  
+  Y: {parsedCoords ? parsedCoords.y : '—'}
 </Text>
 <Text style={styles.panelText}>
   Index: {selectedLine !== null ? selectedLine : 'none'}
