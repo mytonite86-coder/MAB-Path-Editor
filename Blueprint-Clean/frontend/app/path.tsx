@@ -87,6 +87,20 @@ setFileContent(lines);                    // 👈 ADD THIS
   X: {parsedCoords ? parsedCoords.x : '—'}  
   Y: {parsedCoords ? parsedCoords.y : '—'}
 </Text>
+<View style={{ height: 200, backgroundColor: '#111', marginTop: 12 }}>
+  {parsedCoords && (
+    <View
+      style={{
+        position: 'absolute',
+        left: parsedCoords.x * 10 + 50,
+top: parsedCoords.y * 10 + 50,
+        width: 6,
+        height: 6,
+        backgroundColor: 'cyan',
+      }}
+    />
+  )}
+</View>
 <Text style={styles.panelText}>
   Index: {selectedLine !== null ? selectedLine : 'none'}
 </Text>
