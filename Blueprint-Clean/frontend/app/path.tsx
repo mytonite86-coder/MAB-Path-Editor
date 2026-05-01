@@ -75,6 +75,19 @@ setFileContent(lines);                    // 👈 ADD THIS
     ? fileContent[selectedLine]
     : 'Select a line above'}
 </Text>
+<Text style={styles.panelText}>
+  Index: {selectedLine !== null ? selectedLine : 'none'}
+</Text>
+<Text style={styles.panelText}>
+  {selectedLine !== null && fileContent[selectedLine].match(/X-?\d+\.?\d*/)
+    ? fileContent[selectedLine].match(/X-?\d+\.?\d*/)?.[0]
+    : 'No X'}
+</Text>
+<Text style={styles.panelText}>
+  {selectedLine !== null && fileContent[selectedLine].match(/Y-?\d+\.?\d*/)
+    ? fileContent[selectedLine].match(/Y-?\d+\.?\d*/)?.[0]
+    : 'No Y'}
+</Text>
     </View>
   </ScrollView>
 );
