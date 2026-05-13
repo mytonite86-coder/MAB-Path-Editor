@@ -1,30 +1,35 @@
 {
   "expo": {
-    "name": "CAD Blueprint",
-    "slug": "cad-blueprint",
+    "name": "M.A.B. S1 Path Editor",
+    "slug": "mab-s1-path-editor",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "cadblueprint",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "scheme": "mabs1patheditor",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "bundleIdentifier": "com.cadblueprint.app",
+      "bundleIdentifier": "com.mabs1patheditor.app",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Select sketches for CAD conversion",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "cadblueprint"
+              "mabs1patheditor"
             ]
           }
         ]
       }
     },
     "android": {
-      "package": "com.cadblueprint.app",
-      "versionCode": 1,
+      "package": "com.mabs1patheditor.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"
@@ -32,7 +37,12 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "READ_MEDIA_IMAGES"
-      ]
+        
+      ],
+      "blockedPermissions": [
+  "android.permission.CAMERA",
+  "android.permission.RECORD_AUDIO"
+]
     },
     "web": {
       "bundler": "metro",
@@ -49,10 +59,17 @@
           "resizeMode": "contain",
           "backgroundColor": "#000"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "42b8ca55-3810-4eb5-b3f8-5e4b960d5e2d"
+      }
     }
   }
 }

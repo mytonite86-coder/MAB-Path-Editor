@@ -1,5 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
+import Purchases from 'react-native-purchases';
 
 interface User {
   id: string;
@@ -13,6 +15,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isGuest: boolean;
+  isPro: boolean;
   refreshUser: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
@@ -29,6 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const [isPro, setIsPro] = useState(false);
 
   useEffect(() => {
     // Load stored auth data on mount
@@ -44,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (storedToken && storedUser) {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
-      } else if (guestMode === 'true') {
+      } else if (false && guestMode === 'true') {
         setIsGuest(true);
       }
     } catch (error) {
@@ -73,32 +77,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const refreshedUser = await response.json();
     setUser(refreshedUser);
     setToken(activeToken);
+    const customerInfo = await Purchases.getCustomerInfo();
+
+const proActive =
+  customerInfo.entitlements.active['M.A.B. S1 path editor Pro'] !== undefined;
+
+setIsPro(proActive);
     await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
     await AsyncStorage.setItem('authToken', activeToken);
   };
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const { data, error } = await supabase.auth.signInWithPassword({
+  email,
+  password,
+});
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
-      }
+if (error) {
+  throw error;
+}
 
-      const data = await response.json();
-      
-      setToken(data.access_token);
-      setUser(data.user);
+setToken(data.session?.access_token ?? null);
+setUser(data.user as any);
       setIsGuest(false);
 
-      await AsyncStorage.setItem('authToken', data.access_token);
+      await AsyncStorage.setItem(
+  'authToken',
+  data.session?.access_token ?? ''
+);
       await AsyncStorage.setItem('user', JSON.stringify(data.user));
       await AsyncStorage.removeItem('guestMode');
     } catch (error) {
@@ -109,26 +116,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (email: string, username: string, password: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, username, password }),
-      });
+      const { data, error } = await supabase.auth.signUp({
+  email,
+  password,
+  options: {
+    data: {
+      username,
+    },
+  },
+});
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Registration failed');
-      }
+if (error) {
+  throw error;
+}
 
-      const data = await response.json();
-      
-      setToken(data.access_token);
-      setUser(data.user);
+setToken(data.session?.access_token ?? null);
+setUser(data.user as any);
       setIsGuest(false);
 
-      await AsyncStorage.setItem('authToken', data.access_token);
+      
       await AsyncStorage.setItem('user', JSON.stringify(data.user));
       await AsyncStorage.removeItem('guestMode');
     } catch (error) {
@@ -158,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         token,
         isLoading,
         isGuest,
+        isPro,
         refreshUser,
         login,
         register,

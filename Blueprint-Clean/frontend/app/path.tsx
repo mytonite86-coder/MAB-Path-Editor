@@ -1,10 +1,20 @@
-import React, { useState, useEffect } from 'react';
-
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+const codeScrollRef = useRef<ScrollView>(null);
+const previewScrollRef = useRef<ScrollView>(null);
+const isSyncingScroll = useRef(false);
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
+import { useAuth } from '../context/AuthContext';
+
 export default function Path() {
+ const { user, isGuest, isPro } = useAuth(); 
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+ const [insertLineText, setInsertLineText] = useState('G1 X0 Y0');
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [history, setHistory] = useState<string[][]>([]);
 const [fileName, setFileName] = useState('');
@@ -18,6 +28,7 @@ const [lastX, setLastX] = useState(0);
 const [lastY, setLastY] = useState(0);
 const [editX, setEditX] = useState('');
 const [editY, setEditY] = useState('');
+const [scrollLocked, setScrollLocked] = useState(false);
 
 let selectedText = '';
 
@@ -46,21 +57,21 @@ const yMatch = selectedText.match(/Y(-?\d+\.?\d*)/);
 
 
 useEffect(() => {
-  setEditX(xMatch ? xMatch[1] : '');
-  setEditY(yMatch ? yMatch[1] : '');
-}, [selectedLine]);
-useEffect(() => {
-  const start = localStorage.getItem('mab_beta_start');
+  const checkBeta = async () => {
+    const start = await AsyncStorage.getItem('mab_beta_start');
 
-  if (!start) {
-    localStorage.setItem('mab_beta_start', Date.now().toString());
-  } else {
-    const days = (Date.now() - parseInt(start)) / (1000 * 60 * 60 * 24);
+    if (!start) {
+      await AsyncStorage.setItem('mab_beta_start', Date.now().toString());
+    } else {
+      const days = (Date.now() - parseInt(start)) / (1000 * 60 * 60 * 24);
 
-    if (days > 14) {
-      setBetaExpired(true);
+      if (days > 14) {
+        setBetaExpired(true);
+      }
     }
-  }
+  };
+
+  checkBeta();
 }, []);
   
 
@@ -213,28 +224,37 @@ const height = maxY - minY || 1;
 
 const scale = Math.min(200 / width, 200 / height);
 
+
 return (
-   <>
-  <ScrollView style={styles.container}>
+   
+  <ScrollView
+  scrollEnabled={!scrollLocked}
+  style={styles.container}
+  contentContainerStyle={{ paddingBottom: 240 }}
+  keyboardShouldPersistTaps="handled"
+>
     <Text style={styles.title}>Path Edit</Text>
     <Text style={styles.subtitle}>
       Import CNC files, inspect G-code, and preview tool movement.
     </Text>
+   
 
     <TouchableOpacity
       style={styles.primaryButton}
       onPress={async () => {
+  
   const result = await DocumentPicker.getDocumentAsync({
     type: '*/*',
     copyToCacheDirectory: true,
   });
+  console.log('PICKER RESULT:', JSON.stringify(result, null, 2));
 
   if (!result.canceled) {
   const file = result.assets[0];
 
-  if (file.file) {
-    const content = await file.file.text();
-
+  if (file.uri) {
+  const content = await fetch(file.uri).then(r => r.text());
+  
     setFileName(file.name || 'Imported file');   // 👈 ADD THIS
     
    const ext = file.name?.split('.').pop()?.toLowerCase();
@@ -252,7 +272,7 @@ if (ext === 'nc' || ext === 'tap' || ext === 'gcode') {
   .split('\n')
   .filter(line => line.trim() !== '');
 setFileContent(lines);                    // 👈 ADD THIS
-setHistory([lines]);
+
   }
 }
 }}
@@ -261,9 +281,23 @@ setHistory([lines]);
       <Text style={styles.primaryText}>Import CNC File</Text>
     </TouchableOpacity>
 {fileName !== '' && (
-  <ScrollView style={[styles.panel, { maxHeight: 400 }]}>
-    <Text style={styles.panelTitle}>{fileName}</Text>
+  <ScrollView
+  ref={codeScrollRef}
+  style={[styles.panel, { maxHeight: 400 }]}
+  onScroll={(e) => {
+    if (!scrollLocked || isSyncingScroll.current) return;
 
+    isSyncingScroll.current = true;
+
+    previewScrollRef.current?.scrollTo({
+      y: e.nativeEvent.contentOffset.y,
+      animated: false,
+    });
+
+    isSyncingScroll.current = false;
+  }}
+  scrollEventThrottle={16}
+>
     {fileContent.map((line, i) => {
       return (
         <View key={i}>
@@ -283,6 +317,19 @@ setHistory([lines]);
   </ScrollView>
 )}
 
+<TouchableOpacity
+  style={[
+    styles.secondaryButton,
+    scrollLocked && { backgroundColor: '#4FC3F7' },
+  ]}
+  onPress={() => setScrollLocked(!scrollLocked)}
+>
+  <Text style={styles.primaryText}>
+    {scrollLocked ? '🔒 Scroll Locked' : '🔓 Scroll Free'}
+  </Text>
+</TouchableOpacity>
+
+
   
 <View style={styles.panel}>
   <Text style={styles.panelTitle}>Preview</Text>
@@ -297,8 +344,27 @@ setHistory([lines]);
 
   <Text style={styles.panelText}>Zoom: {zoom}x</Text>
 </View>
-  <View
-  style={{ height: 200, backgroundColor: '#111', overflow: 'hidden' }}
+<ScrollView
+  ref={previewScrollRef}
+  scrollEnabled={true}
+  nestedScrollEnabled={true}
+  
+  onMoveShouldSetResponder={() => true}
+  
+  onScroll={(e) => {
+    if (!scrollLocked || isSyncingScroll.current) return;
+
+    isSyncingScroll.current = true;
+
+    codeScrollRef.current?.scrollTo({
+      y: e.nativeEvent.contentOffset.y,
+      animated: false,
+    });
+
+    isSyncingScroll.current = false;
+  }}
+  scrollEventThrottle={16}
+  style={{ height: 200, maxHeight: 200, backgroundColor: '#111', overflow: 'hidden' }}
   onStartShouldSetResponder={() => true}
   onResponderGrant={(e) => {
     setIsDragging(true);
@@ -366,23 +432,34 @@ height: point.line === selectedLine ? 4 : 2,
   );
 })}
       
-  </View>
+  </ScrollView>
 </View>
 
-    <View style={styles.panel}>
-      <Text style={styles.panelTitle}>G-Code</Text>
-      <Text style={styles.panelText}>
-  {selectedLine !== null
-    ? fileContent[selectedLine]
-    : 'Select a line above'}
-</Text>
-<Text style={styles.panelText}>
-  X: {parsedCoords ? parsedCoords.x : '—'}  
-  Y: {parsedCoords ? parsedCoords.y : '—'}
-</Text>
+<View style={styles.panel}>
+  <Text style={styles.panelTitle}>G-Code</Text>
 
+  <ScrollView
+  ref={codeScrollRef}
+  scrollEnabled={true}
+  nestedScrollEnabled={true}
+  onStartShouldSetResponder={() => true}
+  onMoveShouldSetResponder={() => true}
+  style={{ maxHeight: 180 }}
+>
+    <Text style={styles.panelText}>
+      {selectedLine !== null
+        ? fileContent[selectedLine]
+        : 'Select a line above'}
+    </Text>
+  </ScrollView>
+
+  <Text style={styles.panelText}>
+    X: {parsedCoords ? parsedCoords.x : '-'}
+    Y: {parsedCoords ? parsedCoords.y : '-'}
+  </Text>
+</View>
   
-</View>
+
 <Text style={styles.panelText}>
   X:
   <TextInput
@@ -401,21 +478,26 @@ height: point.line === selectedLine ? 4 : 2,
   />
 </Text>
 
- <TouchableOpacity
-  style={[styles.primaryButton, { backgroundColor: '#4FC3F7', marginBottom: 12 }]}
-  onPress={() => {
-    if (!fileContent || fileContent.length === 0) return;
+<TouchableOpacity
+  style={[styles.primaryButton, { backgroundColor: '#4FC3F7' }]}
+  onPress={async () => {
+   if (isGuest || !user || !isPro) {
+  Alert.alert(
+    'Account required',
+    'Please create an account to use production editing features.'
+  );
+  return;
+} 
+    try {
+      const content = fileContent.join('\n');
+      const fileUri = FileSystem.documentDirectory + 'edited-program.cnc';
 
-    const content = fileContent.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName || 'edited.nc';
-    link.click();
-
-    URL.revokeObjectURL(url);
+      await FileSystem.writeAsStringAsync(fileUri, content);
+      await Sharing.shareAsync(fileUri);
+    } catch (err) {
+      console.log(err);
+      alert('Export failed');
+    }
   }}
 >
   <Text style={styles.primaryText}>Export</Text>
@@ -424,6 +506,7 @@ height: point.line === selectedLine ? 4 : 2,
 <TouchableOpacity
   style={styles.primaryButton}
   onPress={() => {
+
     if (selectedLine === null || betaExpired) return;
 
     setHistory(prev => [...prev, fileContent]);
@@ -467,10 +550,48 @@ height: point.line === selectedLine ? 4 : 2,
 >
   <Text style={styles.primaryText}>Undo</Text>
 </TouchableOpacity>
+<TouchableOpacity
+  style={styles.primaryButton}
+  onPress={() => {
+    if (isGuest || !user) {
+  Alert.alert(
+    'Account required',
+    'Please create an account to use production editing features.'
+  );
+  return;
+}
+    const newLines = [...fileContent];
 
-   </ScrollView>
- 
-</> 
+    const insertAt =
+      selectedLine === null
+        ? newLines.length
+        : selectedLine + 1;
+
+    newLines.splice(insertAt, 0, 'G1 X0 Y0');
+
+    setHistory([...history, fileContent]);
+    setFileContent(newLines);
+    setSelectedLine(insertAt);
+  }}
+>
+  <Text style={styles.primaryText}>Add Line</Text>
+</TouchableOpacity>
+<TouchableOpacity
+  style={styles.primaryButton}
+  onPress={async () => {
+  if (isGuest || !user) {
+  Alert.alert(
+    'Account required',
+    'Please create an account to use production editing features.'
+  );
+  return;
+}  
+  await Clipboard.setStringAsync(fileContent.join('\n'));
+}}
+>
+  <Text style={styles.primaryText}>Copy G-code</Text>
+</TouchableOpacity>
+  </ScrollView>
 );
 }
 
@@ -481,6 +602,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     padding: 24,
     gap: 16,
+    paddingBottom: 80,
   },
   title: {
     color: '#fff',
@@ -499,7 +621,17 @@ const styles = StyleSheet.create({
     
     alignItems: 'center',
     gap: 12,
+
   },
+secondaryButton: {
+  padding: 12,
+  borderRadius: 8,
+  backgroundColor: '#333',
+  alignItems: 'center',
+  marginVertical: 8,
+},
+  
+  
   primaryText: {
     color: '#fff',
     fontSize: 18,
@@ -523,4 +655,5 @@ const styles = StyleSheet.create({
     color: '#777',
     fontSize: 15,
   },
+
 });

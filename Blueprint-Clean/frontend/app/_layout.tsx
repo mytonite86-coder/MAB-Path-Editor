@@ -1,8 +1,20 @@
 import { Stack } from 'expo-router';
 import { AuthProvider } from '../context/AuthContext';
 import React from 'react';
+import { Platform } from 'react-native';
+//import Purchases from 'react-native-purchases';
+import { useEffect } from 'react';
 
 export default function RootLayout() {
+  // RevenueCat temporarily disabled to test startup crash
+  // useEffect(() => {
+  //   if (Platform.OS === 'android') {
+  //     Purchases.configure({
+  //       apiKey: 'goog_cVhPtyrQIGTYinFbrQLRdPNRayp',
+  //     });
+  //   }
+  // }, []);
+
   return (
     <AuthProvider>
       <Stack screenOptions={{ headerShown: false }}>
