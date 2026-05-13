@@ -28,6 +28,9 @@ const [lastX, setLastX] = useState(0);
 const [lastY, setLastY] = useState(0);
 const [editX, setEditX] = useState('');
 const [editY, setEditY] = useState('');
+const [editG, setEditG] = useState('');
+const [editI, setEditI] = useState('');
+const [editJ, setEditJ] = useState('');
 const [scrollLocked, setScrollLocked] = useState(false);
 
 let selectedText = '';
@@ -52,7 +55,9 @@ if (selectedLine !== null) {
 
 const xMatch = selectedText.match(/X(-?\d+\.?\d*)/);
 const yMatch = selectedText.match(/Y(-?\d+\.?\d*)/); 
-
+const gMatch = selectedText.match(/(G\d+)/);
+const iMatch = selectedText.match(/(I-?\d+\.?\d*)/);
+const jMatch = selectedText.match(/(J-?\d+\.?\d*)/);
      
 
 
@@ -478,10 +483,37 @@ height: point.line === selectedLine ? 4 : 2,
   />
 </Text>
 
+<Text style={styles.panelText}>
+  G:
+  <TextInput
+    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
+    value={editG}
+    onChangeText={setEditG}
+  />
+</Text>
+
+<Text style={styles.panelText}>
+  I:
+  <TextInput
+    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
+    value={editI}
+    onChangeText={setEditI}
+  />
+</Text>
+
+<Text style={styles.panelText}>
+  J:
+  <TextInput
+    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
+    value={editJ}
+    onChangeText={setEditJ}
+  />
+</Text>
+
 <TouchableOpacity
   style={[styles.primaryButton, { backgroundColor: '#4FC3F7' }]}
   onPress={async () => {
-   if (isGuest || !user || !isPro) {
+  if (isGuest || !user) {
   Alert.alert(
     'Account required',
     'Please create an account to use production editing features.'
@@ -526,6 +558,9 @@ height: point.line === selectedLine ? 4 : 2,
 
       if (line.startsWith('X')) updated[i] = `X${editX}`;
       if (line.startsWith('Y')) updated[i] = `Y${editY}`;
+      if (line.startsWith('G')) updated[i] = `G${editG}`;
+      if (line.startsWith('I')) updated[i] = `I${editI}`;
+      if (line.startsWith('J')) updated[i] = `J${editJ}`;
     }
 
     setFileContent(updated);
@@ -567,7 +602,15 @@ height: point.line === selectedLine ? 4 : 2,
         ? newLines.length
         : selectedLine + 1;
 
-    newLines.splice(insertAt, 0, 'G1 X0 Y0');
+   newLines.splice(
+  insertAt,
+  0,
+  'G03',
+  'X0',
+  'Y0',
+  'I0',
+  'J0'
+);
 
     setHistory([...history, fileContent]);
     setFileContent(newLines);
