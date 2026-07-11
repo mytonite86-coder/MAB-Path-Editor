@@ -25,7 +25,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const API_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -79,34 +80,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(activeToken);
     const customerInfo = await Purchases.getCustomerInfo();
 
-const proActive =
-  customerInfo.entitlements.active['M.A.B. S1 path editor Pro'] !== undefined;
+    const proActive =
+      customerInfo.entitlements.active['M.A.B. S1 path editor Pro'] !== undefined;
 
-setIsPro(proActive);
+    setIsPro(proActive);
     await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
     await AsyncStorage.setItem('authToken', activeToken);
   };
 
   const login = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-  email,
-  password,
-});
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
 
-if (error) {
-  throw error;
-}
+      const data = await response.json();
 
-setToken(data.session?.access_token ?? null);
-setUser(data.user as any);
+      if (!response.ok) {
+        throw new Error(data.detail || 'Login failed');
+      }
+
+      const activeToken = data.access_token;
+      const loggedInUser = data.user;
+
+      setToken(activeToken);
+      setUser(loggedInUser);
       setIsGuest(false);
+      setIsPro(Boolean(loggedInUser?.is_premium));
 
-      await AsyncStorage.setItem(
-  'authToken',
-  data.session?.access_token ?? ''
-);
-      await AsyncStorage.setItem('user', JSON.stringify(data.user));
+      await AsyncStorage.setItem('authToken', activeToken);
+      await AsyncStorage.setItem('user', JSON.stringify(loggedInUser));
       await AsyncStorage.removeItem('guestMode');
     } catch (error) {
       console.error('Login error:', error);
@@ -114,27 +124,28 @@ setUser(data.user as any);
     }
   };
 
+
   const register = async (email: string, username: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signUp({
-  email,
-  password,
-  options: {
-    data: {
-      username,
-    },
-  },
-});
+        email,
+        password,
+        options: {
+          data: {
+            username,
+          },
+        },
+      });
 
-if (error) {
-  throw error;
-}
+      if (error) {
+        throw error;
+      }
 
-setToken(data.session?.access_token ?? null);
-setUser(data.user as any);
+      setToken(data.session?.access_token ?? null);
+      setUser(data.user as any);
       setIsGuest(false);
 
-      
+
       await AsyncStorage.setItem('user', JSON.stringify(data.user));
       await AsyncStorage.removeItem('guestMode');
     } catch (error) {

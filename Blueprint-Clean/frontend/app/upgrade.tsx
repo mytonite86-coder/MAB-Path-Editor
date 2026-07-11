@@ -1,26 +1,74 @@
 import { useRouter } from 'expo-router';
 import {
   Alert,
+  Linking,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Upgrade() {
   const router = useRouter();
 
-  const handleSubscribe = () => {
+const handleSubscribe = async () => {
+  try {
+    const token = await AsyncStorage.getItem('authToken');
+
+    if (!token) {
+      throw new Error('Login session not found. Please log in again.');
+    }
+
+    const originUrl =
+      Platform.OS === 'web'
+        ? window.location.origin
+        : 'http://127.0.0.1:8081';
+
+    const response = await fetch(
+      `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/payments/checkout/session`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          package_id: 'premium_lifetime',
+          origin_url: originUrl,
+        }),
+      }
+    );
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      throw new Error(responseText || 'Could not create Stripe checkout.');
+    }
+
+    const data = JSON.parse(responseText);
+
+    if (!data.url) {
+      throw new Error('Stripe checkout URL was not returned.');
+    }
+
+    if (Platform.OS === 'web') {
+      window.location.href = data.url;
+    } else {
+      await Linking.openURL(data.url);
+    }
+  } catch (error) {
     const message =
-      'Stripe checkout will be connected to this button next.';
+      error instanceof Error ? error.message : 'Checkout failed.';
 
     if (Platform.OS === 'web') {
       window.alert(message);
     } else {
-      Alert.alert('M.A.B. Pro', message);
+      Alert.alert('Checkout Error', message);
     }
-  };
+  }
+};
 
   return (
     <View style={styles.container}>

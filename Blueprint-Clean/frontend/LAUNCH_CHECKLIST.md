@@ -17,9 +17,9 @@ Everything else goes into the backlog.
 Version: Pre-Launch Beta
 
 Current Focus:
-☐ Upgrade Page
+☐x Upgrade Page
 ☐ Subscription Flow
-☐ Stripe Integration
+☐x Stripe Integration
 ☐ Paid Export
 ☐ Paid Copy G-Code
 
@@ -61,8 +61,8 @@ First Paying Customer
 ## ACCOUNT SYSTEM
 
 - [x] Supabase connected
-- [ ] Login verified
-- [ ] Logout verified
+- [x] Login verified
+- [x] Logout verified
 - [ ] Session persistence
 - [ ] Password reset
 - [ ] Premium flag updates correctly
@@ -73,18 +73,18 @@ First Paying Customer
 
 - [x] Guest export blocked
 - [x] Guest Copy G-Code blocked
-- [ ] Logged-in unpaid export blocked
-- [ ] Logged-in unpaid Copy G-Code blocked
-- [ ] Upgrade page opens from Export
-- [ ] Upgrade page opens from Copy G-Code
-- [ ] Search for additional export paths
+- [x] Logged-in unpaid export blocked
+- [x] Logged-in unpaid Copy G-Code blocked
+- [x] Upgrade page opens from Export
+- [x] Upgrade page opens from Copy G-Code
+- [x] Search for additional export paths
 
 ---
 
 ## PAYMENTS
 
-- [ ] Upgrade page created
-- [ ] Stripe integrated
+- [x] Upgrade page created
+- [x] Stripe integrated
 - [ ] Successful payment updates Supabase
 - [ ] Premium unlocks instantly
 - [ ] Subscription cancellation handled
@@ -97,7 +97,7 @@ First Paying Customer
 - [ ] Export works for Pro users
 - [ ] Copy G-Code works for Pro users
 - [ ] Export tested on browser
-- [ ] Export tested on Android
+- [x] Export tested on Android
 
 ---
 
