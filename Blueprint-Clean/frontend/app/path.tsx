@@ -2,7 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 const codeScrollRef = useRef<ScrollView>(null);
 const previewScrollRef = useRef<ScrollView>(null);
 const isSyncingScroll = useRef(false);
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Platform
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,9 +19,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
+import { useRouter } from 'expo-router';
 
 export default function Path() {
- const { user, isGuest, isPro } = useAuth(); 
+ const { user, isGuest, isPro } = useAuth();
+  const router = useRouter();
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
  const [insertLineText, setInsertLineText] = useState('G1 X0 Y0');
 const [fileContent, setFileContent] = useState<string[]>([]);
@@ -513,13 +524,10 @@ height: point.line === selectedLine ? 4 : 2,
 <TouchableOpacity
   style={[styles.primaryButton, { backgroundColor: '#4FC3F7' }]}
   onPress={async () => {
-  if (isGuest || !user) {
-  Alert.alert(
-    'Account required',
-    'Please create an account to use production editing features.'
-  );
+if (isGuest || !user || !isPro) {
+  router.push('/upgrade');
   return;
-} 
+}
     try {
       const content = fileContent.join('\n');
       const fileUri = FileSystem.documentDirectory + 'edited-program.cnc';
@@ -622,13 +630,11 @@ height: point.line === selectedLine ? 4 : 2,
 <TouchableOpacity
   style={styles.primaryButton}
   onPress={async () => {
-  if (isGuest || !user) {
-  Alert.alert(
-    'Account required',
-    'Please create an account to use production editing features.'
-  );
+if (isGuest || !user || !isPro) {
+  router.push('/upgrade');
   return;
-}  
+}
+
   await Clipboard.setStringAsync(fileContent.join('\n'));
 }}
 >

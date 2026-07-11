@@ -16,3 +16,5 @@ Blueprint-Clean/frontend/node_modules/react-native-reanimated/android/build/inte
 Blueprint-Clean/frontend/node_modules/react-native-screens/android/build/intermediates/cxx/Debug/5b2z5o3l/obj/arm64-v8a/libreactnative.so
 Blueprint-Clean/frontend/node_modules/react-native-worklets/android/build/intermediates/cmake/debug/obj/arm64-v8a/libreactnative.so
 Blueprint-Clean/frontend/node_modules/react-native-worklets/android/build/intermediates/cxx/Debug/6v13473j/obj/arm64-v8a/libreactnative.so
+Blueprint-Clean/frontend/android-backup/app/build/intermediates/cxx/Debug/2r6e8713/obj/arm64-v8a/libreactnative.so
+Blueprint-Clean/frontend/android-backup/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/arm64-v8a/libreactnative.so
