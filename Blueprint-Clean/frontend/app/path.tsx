@@ -30,7 +30,7 @@ const [fileContent, setFileContent] = useState<string[]>([]);
 const [history, setHistory] = useState<string[][]>([]);
 const [fileName, setFileName] = useState('');
 const [fileType, setFileType] = useState('Unknown');
-const [betaExpired, setBetaExpired] = useState(false);
+
 const [zoom, setZoom] = useState(1);
 const [panX, setPanX] = useState(0);
 const [panY, setPanY] = useState(0);
@@ -72,23 +72,7 @@ const jMatch = selectedText.match(/(J-?\d+\.?\d*)/);
      
 
 
-useEffect(() => {
-  const checkBeta = async () => {
-    const start = await AsyncStorage.getItem('mab_beta_start');
 
-    if (!start) {
-      await AsyncStorage.setItem('mab_beta_start', Date.now().toString());
-    } else {
-      const days = (Date.now() - parseInt(start)) / (1000 * 60 * 60 * 24);
-
-      if (days > 14) {
-        setBetaExpired(true);
-      }
-    }
-  };
-
-  checkBeta();
-}, []);
   
 
 
@@ -546,8 +530,7 @@ if (isGuest || !user || !isPro) {
 <TouchableOpacity
   style={styles.primaryButton}
   onPress={() => {
-
-    if (selectedLine === null || betaExpired) return;
+    if (selectedLine === null) return;
 
     setHistory(prev => [...prev, fileContent]);
 

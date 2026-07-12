@@ -18,7 +18,7 @@ Version: Pre-Launch Beta
 
 Current Focus:
 ☐x Upgrade Page
-☐ Subscription Flow
+☐x Subscription Flow
 ☐x Stripe Integration
 ☐ Paid Export
 ☐ Paid Copy G-Code
@@ -36,8 +36,8 @@ First Paying Customer
 - [x] Hero updated
 - [ ] Launch Free Demo button linked to live web app
 - [ ] Contact button verified
-- [ ] Upgrade page linked
-- [ ] Pricing page completed
+- [x] Upgrade page linked
+- [x] Pricing page completed
 
 ---
 

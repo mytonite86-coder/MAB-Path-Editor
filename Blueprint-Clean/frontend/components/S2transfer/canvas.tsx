@@ -13,14 +13,15 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import CADCanvas from '../components/CADCanvas';
-import { FeatureTreePanel } from '../components/FeatureTreePanel';
-import { FeaturePropertySheet } from '../components/FeaturePropertySheet';
-import { SelectedElementPanel } from '../components/SelectedElementPanel';
+import CADCanvas from './CADCanvas';
+import { FeatureTreePanel } from './FeatureTreePanel';
+import { SelectedElementPanel } from './SelectedElementPanel';
+import { FeaturePropertySheet } from './FeaturePropertySheet';
+
 import {
   FreeCADFeature,
   FreeCADFeatureParams,
@@ -30,8 +31,7 @@ import {
   createFeature,
   formatMeasurement,
   MeasurementUnit,
-} from '../utils/freecadWorkflow';
-
+} from '../../utils/freecadWorkflow';
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface CADElement {
@@ -1160,7 +1160,7 @@ export default function Canvas() {
         visible={showFeatureSheet}
         onClose={() => setShowFeatureSheet(false)}
         onUpdateFeature={handleUpdateFeature}
-        onUpdateParam={handleUpdateFeatureParam}
+        onUpdateParam={handleUpdateFeatureParam as (featureId: string, param: string | number | symbol, value: string) => void}
         onRemoveFeature={handleRemoveFeature}
         unitSystem={unitSystem}
       />

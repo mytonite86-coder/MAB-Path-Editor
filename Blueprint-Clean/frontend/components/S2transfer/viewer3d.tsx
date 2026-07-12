@@ -14,8 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
+// Provide a simple ambient module declaration for 'three' to avoid missing type errors
+// (If @types/three is installed, this can be removed.)
+declare module 'three';
 import * as THREE from 'three';
-import { convertUnitToMm, formatMeasurement, MeasurementUnit } from '../utils/freecadWorkflow';
+import { convertUnitToMm, formatMeasurement, MeasurementUnit } from '../../utils/freecadWorkflow';
 
 interface CADElement {
   type: string;

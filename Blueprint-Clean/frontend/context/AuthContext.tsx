@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import Purchases from 'react-native-purchases';
+import { Platform } from "react-native";
 
 interface User {
   id: string;
@@ -78,12 +79,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const refreshedUser = await response.json();
     setUser(refreshedUser);
     setToken(activeToken);
-    const customerInfo = await Purchases.getCustomerInfo();
+if (Platform.OS === "web") {
+  setIsPro(refreshedUser.is_premium === true);
+} else {
+  const customerInfo = await Purchases.getCustomerInfo();
 
-    const proActive =
-      customerInfo.entitlements.active['M.A.B. S1 path editor Pro'] !== undefined;
+  const proActive =
+    customerInfo.entitlements.active["M.A.B. S1 path editor Pro"] !== undefined;
 
-    setIsPro(proActive);
+  setIsPro(proActive);
+}
     await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
     await AsyncStorage.setItem('authToken', activeToken);
   };

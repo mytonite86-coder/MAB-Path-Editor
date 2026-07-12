@@ -6,15 +6,15 @@ import { Platform } from 'react-native';
 //import { useEffect } from 'react';
 
 export default function RootLayout() {
- /*
-useEffect(() => {
-  if (Platform.OS === 'android') {
-    Purchases.configure({
-      apiKey: 'goog_cVhPtyrQIGTYinFbrQLRdPNRayP',
-    });
-  }
-}, []);
-*/
+  /*
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      Purchases.configure({
+        apiKey: 'goog_cVhPtyrQIGTYinFbrQLRdPNRayP',
+      } );
+    }
+  }, []);
+  */
 
   return (
     <AuthProvider>
@@ -30,3 +30,4 @@ useEffect(() => {
     </AuthProvider>
   );
 }
+

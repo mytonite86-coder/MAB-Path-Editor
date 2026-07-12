@@ -90,6 +90,9 @@ export default function Profile() {
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
+        console.log("TOKEN:", token);
+console.log("SESSION:", sessionId);
+console.log("API:", `${API_URL}/api/payments/checkout/status/${sessionId}`);
         const response = await fetch(`${API_URL}/api/payments/checkout/status/${sessionId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -321,7 +324,7 @@ export default function Profile() {
           {user?.is_premium && (
             <View style={styles.premiumBadgeLarge} testID="profile-premium-badge">
               <Ionicons name="star" size={20} color="#FFD700" />
-              <Text style={styles.premiumBadgeText}>Premium Member</Text>
+              <Text style={styles.premiumBadgeText}>Lifetime Premium</Text>
             </View>
           )}
         </View>
@@ -329,33 +332,42 @@ export default function Profile() {
         {!user?.is_premium && (
           <View style={styles.upgradeCard} testID="profile-upgrade-card">
             <View style={styles.upgradeHeader}>
-              <Ionicons name="star" size={32} color="#FFD700" />
-              <Text style={styles.upgradeTitle}>Upgrade to Premium</Text>
-            </View>
-            <Text style={styles.upgradeDescription}>
-              Unlock unlimited AI generations and premium features
-            </Text>
+  <Ionicons name="construct" size={32} color="#FFD700" />
+  <Text style={styles.upgradeTitle}>Lifetime Pro Unlock</Text>
+</View>
 
-            <View style={styles.premiumFeatures}>
-              <View style={styles.premiumFeature}>
-                <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.premiumFeatureText}>Unlimited AI generations</Text>
-              </View>
-              <View style={styles.premiumFeature}>
-                <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.premiumFeatureText}>Export to DXF format</Text>
-              </View>
-              <View style={styles.premiumFeature}>
-                <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.premiumFeatureText}>Advanced image processing</Text>
-              </View>
-              <View style={styles.premiumFeature}>
-                <Ionicons name="checkmark-circle" size={20} color="#34C759" />
-                <Text style={styles.premiumFeatureText}>Priority support</Text>
-              </View>
-            </View>
+<Text style={styles.upgradeDescription}>
+  Unlock every editing feature in M.A.B. S1.
+</Text>
 
-            <Text style={styles.sectionLabel}>Purchasable Upgrades</Text>
+<View style={styles.premiumFeatures}>
+  <View style={styles.premiumFeature}>
+    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+    <Text style={styles.premiumFeatureText}>Unlimited G-code editing</Text>
+  </View>
+
+  <View style={styles.premiumFeature}>
+    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+    <Text style={styles.premiumFeatureText}>Path repair tools</Text>
+  </View>
+
+  <View style={styles.premiumFeature}>
+    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+    <Text style={styles.premiumFeatureText}>Line editing & adjustment</Text>
+  </View>
+
+  <View style={styles.premiumFeature}>
+    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+    <Text style={styles.premiumFeatureText}>Unlimited file processing</Text>
+  </View>
+
+  <View style={styles.premiumFeature}>
+    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+    <Text style={styles.premiumFeatureText}>Lifetime updates for M.A.B. S1</Text>
+  </View>
+</View>
+
+           <Text style={styles.sectionLabel}>Choose Your License</Text>
             {isLoadingPackages ? (
               <ActivityIndicator color="#FFD700" style={styles.packageLoader} />
             ) : (
@@ -422,13 +434,21 @@ export default function Profile() {
           </View>
         )}
 
-        <View style={styles.infoCard} testID="profile-info-card">
-          <Text style={styles.infoTitle}>About</Text>
-          <Text style={styles.infoText}>
-            CAD Blueprint - AI-Powered Blueprint Creation
-          </Text>
-          <Text style={styles.infoText}>Version 1.0.0</Text>
-        </View>
+       <View style={styles.aboutCard}>
+  <Text style={styles.aboutTitle}>About</Text>
+
+  <Text style={styles.aboutText}>
+    M.A.B. S1 Path Editor
+  </Text>
+
+  <Text style={styles.aboutText}>
+    Professional CNC G-code Editing
+  </Text>
+
+  <Text style={styles.aboutVersion}>
+    Version 1.0.0
+  </Text>
+</View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -705,6 +725,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  aboutCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 16,
+  },
+  aboutTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  aboutText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  aboutVersion: {
+    fontSize: 14,
+    color: '#A1A1A6',
+    marginTop: 8,
   },
   infoCard: {
     backgroundColor: '#1a1a1a',

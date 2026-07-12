@@ -52,7 +52,7 @@ return (
   <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
     <View style={{ padding: 24 }}>
       <Text style={{ color: '#fff', fontSize: 28, fontWeight: 'bold', marginBottom: 20 }}>
-        M.A.B Path Editor Beta
+        M.A.B Path Editor 
       </Text>
 
       <TouchableOpacity
