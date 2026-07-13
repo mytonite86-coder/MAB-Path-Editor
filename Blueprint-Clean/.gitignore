@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+.metro-cache/
+frontend/.metro-cache/
+backend/__pycache__/
+backend/tests/__pycache__/
+*.pyc
+.env
+backend/.env
+frontend/.env
+*.zip
