@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-const codeScrollRef = useRef<ScrollView>(null);
-const previewScrollRef = useRef<ScrollView>(null);
-const isSyncingScroll = useRef(false);
+
 import {
   View,
   Text,
@@ -22,6 +20,9 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 
 export default function Path() {
+  const codeScrollRef = useRef<ScrollView>(null);
+const previewScrollRef = useRef<ScrollView>(null);
+const isSyncingScroll = useRef(false);
  const { user, isGuest, isPro } = useAuth();
   const router = useRouter();
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
@@ -512,16 +513,31 @@ if (isGuest || !user || !isPro) {
   router.push('/upgrade');
   return;
 }
-    try {
-      const content = fileContent.join('\n');
-      const fileUri = FileSystem.documentDirectory + 'edited-program.cnc';
+   try {
+  const content = fileContent.join('\n');
 
-      await FileSystem.writeAsStringAsync(fileUri, content);
-      await Sharing.shareAsync(fileUri);
-    } catch (err) {
-      console.log(err);
-      alert('Export failed');
-    }
+  if (Platform.OS === 'web') {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = downloadUrl;
+    link.download = 'edited-program.cnc';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  } else {
+    const fileUri =
+      FileSystem.documentDirectory + 'edited-program.cnc';
+
+    await FileSystem.writeAsStringAsync(fileUri, content);
+    await Sharing.shareAsync(fileUri);
+  }
+} catch (err) {
+  console.error('Export failed:', err);
+  alert('Export failed');
+}
   }}
 >
   <Text style={styles.primaryText}>Export</Text>
