@@ -37,7 +37,7 @@ const handleSubscribe = async () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          package_id: 'LifeTime Unlock • $19.99 •',
+         package_id: 'premium_lifetime',
           origin_url: originUrl,
         }),
       }

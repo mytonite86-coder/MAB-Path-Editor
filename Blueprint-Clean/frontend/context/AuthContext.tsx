@@ -131,33 +131,31 @@ if (Platform.OS === "web") {
 
 
   const register = async (email: string, username: string, password: string) => {
-    try {
-      const { data, error } = await supabase.auth.signUp({
+  try {
+    const response = await fetch(`${API_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         email,
+        username,
         password,
-        options: {
-          data: {
-            username,
-          },
-        },
-      });
+      }),
+    });
 
-      if (error) {
-        throw error;
-      }
+    const data = await response.json();
 
-      setToken(data.session?.access_token ?? null);
-      setUser(data.user as any);
-      setIsGuest(false);
-
-
-      await AsyncStorage.setItem('user', JSON.stringify(data.user));
-      await AsyncStorage.removeItem('guestMode');
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error(data.detail || 'Registration failed');
     }
-  };
+
+    await login(email, password);
+  } catch (error) {
+    console.error('Registration error:', error);
+    throw error;
+  }
+};
 
   const logout = async () => {
     setUser(null);

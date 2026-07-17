@@ -57,8 +57,8 @@ export default function Auth() {
       <ScrollView contentContainerStyle={styles.scrollContent} testID="auth-screen">
         <View style={styles.header} testID="auth-header">
           <Ionicons name="cube-outline" size={64} color="#007AFF" />
-          <Text style={styles.title} testID="auth-title">CAD Blueprint</Text>
-          <Text style={styles.subtitle} testID="auth-subtitle">AI-Powered Blueprint Creation</Text>
+          <Text style={styles.title} testID="auth-title">M.A.B. S1 Path Editor</Text>
+          <Text style={styles.subtitle} testID="auth-subtitle">Mobile G-Code Editing for CNC Operators</Text>
         </View>
 
         <View style={styles.formContainer} testID="auth-form-container">
