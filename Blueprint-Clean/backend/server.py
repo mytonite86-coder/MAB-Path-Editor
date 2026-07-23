@@ -569,7 +569,7 @@ async def create_checkout_session(
 
     session = stripe.checkout.Session.create(
         allow_promotion_codes=True,
-payment_method_collection="if_required",
+        
         mode="payment",
         payment_method_types=["card"],
         line_items=[
