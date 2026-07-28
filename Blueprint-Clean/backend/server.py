@@ -107,11 +107,21 @@ def validate_origin_url(origin_url: str) -> str:
 def build_checkout_return_urls(origin_url: str) -> tuple[str, str]:
     parsed = urlparse(origin_url)
 
-    if parsed.scheme in {"http", "https"}:
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        base_url = origin_url.rstrip("/")
+
+        if parsed.netloc == "mytonite86-coder.github.io":
+            if not parsed.path.rstrip("/").endswith("/MAB-Path-Editor"):
+                base_url = f"{base_url}/MAB-Path-Editor"
+
+            profile_url = f"{base_url}/profile.html"
+        else:
+            profile_url = f"{base_url}/profile"
+
         success_url = (
-            f"{origin_url}/profile?session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
+            f"{profile_url}?session_id={{CHECKOUT_SESSION_ID}}&checkout=success"
         )
-        cancel_url = f"{origin_url}/profile?checkout=cancel"
+        cancel_url = f"{profile_url}?checkout=cancel"
         return success_url, cancel_url
 
     separator = "&" if "?" in origin_url else "?"
