@@ -20,7 +20,7 @@ export default function Auth() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, register, continueAsGuest } = useAuth();
+  const { login, register } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async () => {
@@ -44,10 +44,7 @@ export default function Auth() {
     }
   };
 
-  const handleGuestMode = () => {
-    continueAsGuest();
-    router.replace('/home');
-  };
+  
 
   return (
     <KeyboardAvoidingView
@@ -116,18 +113,7 @@ export default function Auth() {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity style={styles.guestButton} onPress={handleGuestMode} testID="auth-guest-button">
-            <Text style={styles.guestButtonText}>Continue as Guest</Text>
-            <Text style={styles.guestButtonSubtext}>
-              (Limited features - can't save blueprints)
-            </Text>
-          </TouchableOpacity>
+          
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -210,22 +196,5 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     fontSize: 14,
   },
-  guestButton: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  guestButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  guestButtonSubtext: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 4,
-  },
+  
 });

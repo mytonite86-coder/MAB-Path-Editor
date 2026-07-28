@@ -42,23 +42,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const loadStoredAuth = async () => {
-    try {
-      const storedToken = await AsyncStorage.getItem('authToken');
-      const storedUser = await AsyncStorage.getItem('user');
-      const guestMode = await AsyncStorage.getItem('guestMode');
+  try {
+    setIsGuest(false);
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // Remove old permanently saved browser logins.
+      await AsyncStorage.removeItem('authToken');
+      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('guestMode');
+
+      // Keep login only for the current browser tab/session.
+      const storedToken = window.sessionStorage.getItem('authToken');
+      const storedUser = window.sessionStorage.getItem('user');
 
       if (storedToken && storedUser) {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
-      } else if (false && guestMode === 'true') {
-        setIsGuest(true);
+      } else {
+        setToken(null);
+        setUser(null);
       }
-    } catch (error) {
-      console.error('Error loading auth data:', error);
-    } finally {
-      setIsLoading(false);
+
+      return;
     }
-  };
+
+    const storedToken = await AsyncStorage.getItem('authToken');
+    const storedUser = await AsyncStorage.getItem('user');
+
+    if (storedToken && storedUser) {
+      setToken(storedToken);
+      setUser(JSON.parse(storedUser));
+    }
+  } catch (error) {
+    console.error('Error loading auth data:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const refreshUser = async () => {
     const activeToken = token || (await AsyncStorage.getItem('authToken'));
@@ -89,8 +109,13 @@ if (Platform.OS === "web") {
 
   setIsPro(proActive);
 }
-    await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
-    await AsyncStorage.setItem('authToken', activeToken);
+   if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  window.sessionStorage.setItem('user', JSON.stringify(refreshedUser));
+  window.sessionStorage.setItem('authToken', activeToken);
+} else {
+  await AsyncStorage.setItem('user', JSON.stringify(refreshedUser));
+  await AsyncStorage.setItem('authToken', activeToken);
+}
   };
 
   const login = async (email: string, password: string) => {
@@ -120,9 +145,13 @@ if (Platform.OS === "web") {
       setIsGuest(false);
       setIsPro(Boolean(loggedInUser?.is_premium));
 
-      await AsyncStorage.setItem('authToken', activeToken);
-      await AsyncStorage.setItem('user', JSON.stringify(loggedInUser));
-      await AsyncStorage.removeItem('guestMode');
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  window.sessionStorage.setItem('authToken', activeToken);
+  window.sessionStorage.setItem('user', JSON.stringify(loggedInUser));
+} else {
+  await AsyncStorage.setItem('authToken', activeToken);
+  await AsyncStorage.setItem('user', JSON.stringify(loggedInUser));
+}
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -157,14 +186,25 @@ if (Platform.OS === "web") {
   }
 };
 
-  const logout = async () => {
-    setUser(null);
-    setToken(null);
-    setIsGuest(false);
+ const logout = async () => {
+  setUser(null);
+  setToken(null);
+  setIsGuest(false);
+  setIsPro(false);
+
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.sessionStorage.removeItem('authToken');
+    window.sessionStorage.removeItem('user');
+
     await AsyncStorage.removeItem('authToken');
     await AsyncStorage.removeItem('user');
     await AsyncStorage.removeItem('guestMode');
-  };
+  } else {
+    await AsyncStorage.removeItem('authToken');
+    await AsyncStorage.removeItem('user');
+    await AsyncStorage.removeItem('guestMode');
+  }
+};
 
   const continueAsGuest = async () => {
     setIsGuest(true);

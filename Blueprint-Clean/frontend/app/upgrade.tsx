@@ -17,9 +17,11 @@ export default function Upgrade() {
 
 const handleSubscribe = async () => {
   try {
-    const token = await AsyncStorage.getItem('authToken');
-
-    if (!token) {
+    const token =
+  Platform.OS === 'web' && typeof window !== 'undefined'
+    ? window.sessionStorage.getItem('authToken')
+    : await AsyncStorage.getItem('authToken');
+      if (!token) {
       throw new Error('Login session not found. Please log in again.');
     }
 
