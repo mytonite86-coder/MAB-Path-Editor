@@ -34,10 +34,7 @@ from auth import (
     get_current_user,
     get_current_user_optional,
 )
-try:
-    from ai_service import AICADService
-except ModuleNotFoundError:
-    AICADService = None
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -59,8 +56,7 @@ app = FastAPI(title="CAD Blueprint API")
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# AI Service
-ai_service = AICADService() if AICADService else None
+
 
 # Configure logging
 logging.basicConfig(
@@ -277,73 +273,24 @@ async def text_to_cad(
     request: TextToCADRequest,
     current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
-    """Convert text description to CAD elements using AI"""
-    if ai_service is None:
-        raise HTTPException(
-        status_code=503,
-        detail="AI CAD service is temporarily unavailable",
-    )
-    try:
-        # Generate CAD from text
-        result = await ai_service.text_to_cad(request.prompt)
-
-        # Save generation record
-        generation_doc = {
-            "user_id": current_user["user_id"] if current_user else None,
-            "type": "text_to_cad",
-            "input": request.prompt,
-            "output": result["elements"],
-            "generation_id": result["generation_id"],
-            "created_at": datetime.utcnow(),
-        }
-        await ai_generations_collection.insert_one(generation_doc)
-
-        return AICADResponse(**result)
-
-    except Exception as e:
-        logger.error(f"Error in text_to_cad: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating CAD from text: {str(e)}",
-        )
-
-
-@api_router.post("/ai/image-to-cad", response_model=AICADResponse)
-async def image_to_cad(
-    request: ImageToCADRequest,
-    current_user: Optional[dict] = Depends(get_current_user_optional),
-):
-    """Convert image to CAD elements using AI"""
-    if ai_service is None:
-        raise HTTPException(
-        status_code=503,
-        detail="AI CAD service is temporarily unavailable",
-    )
-    try:
-        # Generate CAD from image
-        result = await ai_service.image_to_cad(
-            request.image_base64, request.instructions
-        )
+ 
+   
+  
 
         # Save generation record
         generation_doc = {
             "user_id": current_user["user_id"] if current_user else None,
             "type": "image_to_cad",
             "input": f"Image with instructions: {request.instructions or 'None'}",
-            "output": result["elements"],
-            "generation_id": result["generation_id"],
+            
+            
             "created_at": datetime.utcnow(),
         }
         await ai_generations_collection.insert_one(generation_doc)
 
-        return AICADResponse(**result)
+       
 
-    except Exception as e:
-        logger.error(f"Error in image_to_cad: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating CAD from image: {str(e)}",
-        )
+   
 
 
 # --------------------- BLUEPRINT ENDPOINTS ---------------------
