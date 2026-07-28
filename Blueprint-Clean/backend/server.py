@@ -114,7 +114,7 @@ def build_checkout_return_urls(origin_url: str) -> tuple[str, str]:
             if not parsed.path.rstrip("/").endswith("/MAB-Path-Editor"):
                 base_url = f"{base_url}/MAB-Path-Editor"
 
-            profile_url = f"{base_url}/profile.html"
+            profile_url = f"{base_url}/profile"
         else:
             profile_url = f"{base_url}/profile"
 
