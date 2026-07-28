@@ -33,8 +33,7 @@ export default function Profile() {
   const { user, isGuest, logout, token, refreshUser } = useAuth();
   const router = useRouter();
   const { session_id, checkout } = useLocalSearchParams<{ session_id?: string; checkout?: string }>();
-  const [premiumCode, setPremiumCode] = useState('');
-  const [isActivating, setIsActivating] = useState(false);
+  
   const [packages, setPackages] = useState<PaymentPackage[]>([]);
   const [isLoadingPackages, setIsLoadingPackages] = useState(true);
   const [isCreatingCheckout, setIsCreatingCheckout] = useState<string | null>(null);
@@ -151,38 +150,7 @@ console.log("API:", `${API_URL}/api/payments/checkout/status/${sessionId}`);
     ]);
   };
 
-  const handleActivatePremium = async () => {
-    if (!premiumCode.trim()) {
-      Alert.alert('Error', 'Please enter a premium code');
-      return;
-    }
-
-    setIsActivating(true);
-    try {
-      const response = await fetch(`${API_URL}/api/premium/activate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ code: premiumCode }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to activate premium');
-      }
-
-      const data = await response.json();
-      Alert.alert('Success', data.message);
-      setPremiumCode('');
-      await refreshUser();
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to activate premium');
-    } finally {
-      setIsActivating(false);
-    }
-  };
+ 
 
   const handleBuyUpgrade = async (packageId: string) => {
     if (!token) {
@@ -404,33 +372,11 @@ console.log("API:", `${API_URL}/api/payments/checkout/status/${sessionId}`);
               ))
             )}
 
-            <Text style={styles.codeLabel}>Have a premium code?</Text>
-            <TextInput
-              style={styles.codeInput}
-              placeholder="Enter premium code"
-              placeholderTextColor="#666"
-              value={premiumCode}
-              onChangeText={setPremiumCode}
-              autoCapitalize="characters"
-              testID="profile-premium-code-input"
-            />
+            
 
-            <TouchableOpacity
-              style={[styles.activateButton, isActivating && styles.activateButtonDisabled]}
-              onPress={handleActivatePremium}
-              disabled={isActivating}
-              testID="profile-activate-premium-button"
-            >
-              {isActivating ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.activateButtonText}>Activate Premium</Text>
-              )}
-            </TouchableOpacity>
+            
 
-            <Text style={styles.bypassHint}>
-              Test bypass code: CAD_PREMIUM_2025
-            </Text>
+           
           </View>
         )}
 
