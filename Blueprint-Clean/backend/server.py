@@ -63,17 +63,40 @@ STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 PREMIUM_PACKAGES = {
     "premium_lifetime": {
         "package_id": "premium_lifetime",
+        "product_id": "mab_s1",
         "name": "M.A.B. S1 Lifetime Unlock",
-        "description": "Unlock premium editing and export tools in M.A.B. S1.",
+        "description": (
+            "Unlock premium editing and export tools in M.A.B. S1."
+        ),
         "amount": 19.99,
         "currency": "usd",
+        "billing_mode": "payment",
+        "interval": None,
         "perks": [
             "Unlimited G-code editing",
             "Export edited CNC files",
             "Copy edited G-code",
             "Lifetime M.A.B. S1 premium access",
         ],
-    }
+    },
+    "pathseal_monthly": {
+        "package_id": "pathseal_monthly",
+        "product_id": "pathseal",
+        "name": "PathSeal Founder Access",
+        "description": (
+            "Scan, review, repair, validate, and download cleaned SVG files."
+        ),
+        "amount": 9.99,
+        "currency": "usd",
+        "billing_mode": "subscription",
+        "interval": "month",
+        "perks": [
+            "Unlimited PathSeal repairs",
+            "Numbered open-path review",
+            "Validated clean SVG downloads",
+            "Founder launch pricing",
+        ],
+    },
 }
 
 
@@ -85,7 +108,44 @@ def configure_stripe() -> None:
         )
 
     stripe.api_key = STRIPE_API_KEY
+def get_user_entitlements(user: dict) -> list[str]:
+    entitlements = set(user.get("entitlements") or [])
 
+    # Preserve access for existing M.A.B. premium customers.
+    if user.get("is_premium", False):
+        entitlements.add("mab_s1")
+
+    return sorted(entitlements)
+
+
+def build_user_response(
+    user: dict,
+    user_id: Optional[str] = None,
+) -> UserResponse:
+    resolved_user_id = user_id or str(user["_id"])
+
+    return UserResponse(
+        id=resolved_user_id,
+        email=user["email"],
+        username=user["username"],
+        is_premium=user.get("is_premium", False),
+        entitlements=get_user_entitlements(user),
+        created_at=user["created_at"],
+    )
+
+
+def build_access_token_for_user(
+    user_id: str,
+    user: dict,
+) -> str:
+    return create_access_token(
+        data={
+            "sub": user_id,
+            "email": user["email"],
+            "is_premium": user.get("is_premium", False),
+            "entitlements": get_user_entitlements(user),
+        }
+    )
 
 def validate_origin_url(origin_url: str) -> str:
     parsed = urlparse(origin_url)
@@ -193,27 +253,29 @@ async def register(user_data: UserCreate):
         "password": hashed_password,
         "is_premium": False,
         "created_at": datetime.utcnow(),
+        "entitlements": [],
     }
 
     result = await users_collection.insert_one(user_doc)
     user_id = str(result.inserted_id)
 
-    # Create access token
-    access_token = create_access_token(
-        data={"sub": user_id, "email": user_data.email, "is_premium": False}
+    user_doc["_id"] = result.inserted_id
+
+    access_token = build_access_token_for_user(
+    user_id,
+    user_doc,
     )
 
-    user_response = UserResponse(
-        id=user_id,
-        email=user_data.email,
-        username=user_data.username,
-        is_premium=False,
-        created_at=user_doc["created_at"],
+    user_response = build_user_response(
+    user_doc,
+    user_id,
     )
 
     return TokenResponse(
-        access_token=access_token, token_type="bearer", user=user_response
-    )
+    access_token=access_token,
+    token_type="bearer",
+    user=user_response,
+    )   
 
 
 @api_router.post("/auth/login", response_model=TokenResponse)
@@ -230,25 +292,17 @@ async def login(credentials: UserLogin):
 
     user_id = str(user["_id"])
 
-    # Create access token
-    access_token = create_access_token(
-        data={
-            "sub": user_id,
-            "email": user["email"],
-            "is_premium": user.get("is_premium", False),
-        }
+    access_token = build_access_token_for_user(
+    user_id,
+    user,
     )
 
-    user_response = UserResponse(
-        id=user_id,
-        email=user["email"],
-        username=user["username"],
-        is_premium=user.get("is_premium", False),
-        created_at=user["created_at"],
-    )
+    user_response = build_user_response(user)
 
     return TokenResponse(
-        access_token=access_token, token_type="bearer", user=user_response
+    access_token=access_token,
+    token_type="bearer",
+    user=user_response,
     )
 
 
@@ -260,13 +314,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserResponse(
-        id=str(user["_id"]),
-        email=user["email"],
-        username=user["username"],
-        is_premium=user.get("is_premium", False),
-        created_at=user["created_at"],
-    )
+    return build_user_response(user)
 
 
 
