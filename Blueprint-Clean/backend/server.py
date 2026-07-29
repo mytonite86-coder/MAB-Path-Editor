@@ -69,15 +69,15 @@ STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 PREMIUM_PACKAGES = {
     "premium_lifetime": {
         "package_id": "premium_lifetime",
-        "name": "Premium Lifetime Upgrade",
-        "description": "Unlock unlimited AI generations and premium CAD tools.",
+        "name": "M.A.B. S1 Lifetime Unlock",
+        "description": "Unlock premium editing and export tools in M.A.B. S1.",
         "amount": 19.99,
         "currency": "usd",
         "perks": [
-            "Unlimited AI generations",
-            "Advanced Part Design tools",
-            "Premium export features",
-            "Priority image-to-CAD processing",
+            "Unlimited G-code editing",
+            "Export edited CNC files",
+            "Copy edited G-code",
+            "Lifetime M.A.B. S1 premium access",
         ],
     }
 }
