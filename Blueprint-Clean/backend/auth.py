@@ -87,4 +87,4 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
     "email": payload.get("email"),
     "is_premium": payload.get("is_premium", False),
     "entitlements": payload.get("entitlements", []),
-}    
+}   

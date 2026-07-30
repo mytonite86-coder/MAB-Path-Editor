@@ -17,12 +17,7 @@ class UserLogin(BaseModel):
     password: str
 
 
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    username: str
-    is_premium: bool
-    created_at: datetime
+
 
 
 class TokenResponse(BaseModel):
