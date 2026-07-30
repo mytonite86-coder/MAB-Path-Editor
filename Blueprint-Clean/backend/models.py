@@ -2,6 +2,12 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+class UserCreate(BaseModel):
+    email: EmailStr
+    username: str
+    password: str
+
+
 
 class UserResponse(BaseModel):
     id: str
