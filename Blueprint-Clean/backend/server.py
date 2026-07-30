@@ -242,6 +242,25 @@ def stripe_id(stripe_object):
         return stripe_object
 
     return stripe_value(stripe_object, "id")
+def stripe_dict(stripe_object) -> dict:
+    if stripe_object is None:
+        return {}
+
+    if isinstance(stripe_object, dict):
+        return dict(stripe_object)
+
+    to_dict_recursive = getattr(
+        stripe_object,
+        "to_dict_recursive",
+        None,
+    )
+
+    if callable(to_dict_recursive):
+        return to_dict_recursive()
+
+    return {}
+
+
 def get_subscription_period_end(subscription):
     period_end = stripe_value(
         subscription,
@@ -350,12 +369,11 @@ async def apply_premium_upgrade(
                     status_payload,
                     "currency",
                 ),
-                "metadata": dict(
+                "metadata": stripe_dict(
                     stripe_value(
                         status_payload,
                         "metadata",
-                        {},
-                    ) or {}
+                    )
                 ),
                 "processed_upgrade": True,
                 "access_active": True,
@@ -383,12 +401,11 @@ async def sync_pathseal_subscription(
     if not subscription_id:
         return False
 
-    metadata = dict(
+    metadata = stripe_dict(
         stripe_value(
             subscription,
             "metadata",
-            {},
-        ) or {}
+        )
     )
 
     user_id = metadata.get("user_id")
@@ -540,12 +557,11 @@ async def process_checkout_session(
         )
         return False
 
-    metadata = dict(
+    metadata = stripe_dict(
         stripe_value(
             stripe_session,
             "metadata",
-            {},
-        ) or {}
+        )
     )
 
     product_id = (
