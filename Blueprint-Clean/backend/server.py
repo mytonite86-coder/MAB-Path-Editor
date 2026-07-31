@@ -948,39 +948,39 @@ async def get_checkout_status(
             round(float(transaction["amount"]) * 100)
         ) 
 
-        return PaymentStatusResponse(
-        session_id=session_id,
-        package_id=transaction["package_id"],
-        product_id=transaction.get(
-            "product_id",
-            "",
-        ),
-        status=stripe_value(
-            stripe_session,
-            "status",
-            transaction.get("status", "open"),
-        ),
-        payment_status=stripe_value(
-            stripe_session,
-            "payment_status",
-            transaction.get("payment_status", "pending"),
-        ),
-        amount_total=amount_total,
-        currency=stripe_value(
-            stripe_session,
-            "currency",
-            transaction.get("currency", "usd"),
-        ),
-        is_premium=bool(
-            user_doc and user_doc.get("is_premium")
-        ),
-        entitlements=get_user_entitlements(
-            user_doc or {}
-        ),
-        subscription_status=transaction.get(
-            "subscription_status"
-        ),
-    )
+    return PaymentStatusResponse(
+    session_id=session_id,
+    package_id=transaction["package_id"],
+    product_id=transaction.get(
+        "product_id",
+        "",
+    ),
+    status=stripe_value(
+        stripe_session,
+        "status",
+        transaction.get("status", "open"),
+    ),
+    payment_status=stripe_value(
+        stripe_session,
+        "payment_status",
+        transaction.get("payment_status", "pending"),
+    ),
+    amount_total=amount_total,
+    currency=stripe_value(
+        stripe_session,
+        "currency",
+        transaction.get("currency", "usd"),
+    ),
+    is_premium=bool(
+        user_doc and user_doc.get("is_premium")
+    ),
+    entitlements=get_user_entitlements(
+        user_doc or {}
+    ),
+    subscription_status=transaction.get(
+        "subscription_status"
+    ),
+)
 
 
 @api_router.post("/webhook/stripe")
