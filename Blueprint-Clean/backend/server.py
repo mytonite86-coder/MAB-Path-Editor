@@ -838,6 +838,8 @@ async def create_checkout_session(
 
     session = stripe.checkout.Session.create(
         allow_promotion_codes=True,
+
+        payment_method_collection="if_required",
         
         mode=package["billing_mode"],
         payment_method_types=["card"],
