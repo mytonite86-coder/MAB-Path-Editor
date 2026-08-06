@@ -56,7 +56,10 @@ def _post_event(endpoint: str, ingest_key: str, payload: dict) -> None:
     )
 
     try:
-        with request.urlopen(outbound, timeout=5) as response:
+        # Render's free tier can take well over five seconds to wake. Tracking
+        # runs off the product's critical path, so allow one cold start instead
+        # of silently dropping the first visitor after an idle period.
+        with request.urlopen(outbound, timeout=45) as response:
             if response.status != 202:
                 raise HTTPException(
                     status_code=502,
