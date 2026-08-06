@@ -29,6 +29,7 @@ from auth import (
     get_current_user,
     get_current_user_optional,
 )
+from signaldrift import build_signaldrift_event, forward_signaldrift_event
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1053,6 +1054,13 @@ async def stripe_webhook(request: Request):
 
 
 # --------------------- HEALTH CHECK ---------------------
+
+
+@api_router.post("/analytics/pathseal/events", status_code=202)
+async def relay_pathseal_event(event: dict):
+    payload = build_signaldrift_event("pathseal", event)
+    await forward_signaldrift_event(payload)
+    return {"accepted": True}
 
 
 
