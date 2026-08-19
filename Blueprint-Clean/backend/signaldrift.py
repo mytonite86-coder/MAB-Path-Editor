@@ -7,10 +7,21 @@ from fastapi import HTTPException
 
 
 SIGNALDRIFT_EVENT_TYPES = {
+    # Canonical PathSeal proof-funnel vocabulary.
+    "landing_visit",
+    "upload_started",
+    "scan_completed",
+    "account_created",
+    "login_completed",
+    "repair_selected",
+    "checkout_started",
+    "payment_completed",
+    "validated_download_completed",
+    "error",
+    # Legacy production events remain valid for backward compatibility.
     "visit",
     "signup",
     "upload",
-    "checkout_started",
     "subscription",
 }
 
