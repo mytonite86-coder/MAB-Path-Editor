@@ -6,13 +6,7 @@ from urllib import error, request
 from fastapi import HTTPException
 
 
-SIGNALDRIFT_EVENT_TYPES = {
-    "visit",
-    "signup",
-    "upload",
-    "checkout_started",
-    "subscription",
-}
+from signaldrift_event_types import SIGNALDRIFT_EVENT_TYPES
 
 
 def build_signaldrift_event(product: str, event: dict) -> dict:
