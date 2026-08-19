@@ -1,0 +1,45 @@
+name: PR safety
+
+on:
+  pull_request:
+    branches:
+      - shared-product-access
+
+permissions:
+  contents: read
+
+jobs:
+  public-production-boundaries:
+    name: Public production boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out proposed changes
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile backend source
+        run: python -m compileall -q Blueprint-Clean/backend
+
+      - name: Verify production safety guards
+        shell: python
+        run: |
+          from pathlib import Path
+
+          auth = Path("Blueprint-Clean/backend/auth.py").read_text(encoding="utf-8")
+          profile = Path("Blueprint-Clean/frontend/app/profile.tsx").read_text(encoding="utf-8")
+          tests = Path("Blueprint-Clean/backend/tests/conftest.py").read_text(encoding="utf-8")
+
+          forbidden = {
+              "development JWT fallback": "your-secret-key" in auth,
+              "checkout token logging": 'console.log("TOKEN:"' in profile,
+              "missing Render test guard": '.onrender.com' not in tests,
+              "missing destructive-test opt-in": "ALLOW_DESTRUCTIVE_INTEGRATION_TESTS" not in tests,
+          }
+
+          failures = [name for name, failed in forbidden.items() if failed]
+          if failures:
+              raise SystemExit("Safety check failed: " + ", ".join(failures))
