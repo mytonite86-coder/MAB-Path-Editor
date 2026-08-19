@@ -3,7 +3,7 @@ import time
 import pytest
 
 
-# Payments module regression: package listing, Stripe checkout session/status, and legacy premium code activation.
+# Payments module regression: package listing, Stripe checkout session/status, and disabled direct premium activation.
 class TestPaymentsStripeFlow:
     @pytest.fixture
     def auth_ctx(self, api_client, base_url):
@@ -82,17 +82,10 @@ class TestPaymentsStripeFlow:
         assert status_data.get("status") in {"open", "complete", "expired"}
         assert status_data.get("payment_status") in {"unpaid", "pending", "no_payment_required"}
 
-    def test_legacy_premium_code_activation_still_works(self, api_client, base_url, auth_ctx):
+    def test_direct_premium_activation_is_disabled(self, api_client, base_url, auth_ctx):
         activate_response = api_client.post(
             f"{base_url}/api/premium/activate",
             headers=auth_ctx["headers"],
-            json={"code": "CAD_PREMIUM_2025"},
+            json={"code": "disabled-test-value"},
         )
-        assert activate_response.status_code == 200
-        activate_data = activate_response.json()
-        assert activate_data.get("is_premium") is True
-
-        me_response = api_client.get(f"{base_url}/api/auth/me", headers=auth_ctx["headers"])
-        assert me_response.status_code == 200
-        me_data = me_response.json()
-        assert me_data.get("is_premium") is True
+        assert activate_response.status_code == 501

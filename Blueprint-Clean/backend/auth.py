@@ -9,7 +9,7 @@ import os
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
+JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 

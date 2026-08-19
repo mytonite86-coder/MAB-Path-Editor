@@ -3,7 +3,7 @@ import time
 import pytest
 
 
-# Launch blockers: auth, premium activation, blueprint persistence, and checkout bootstrap.
+# Launch blockers: auth, disabled direct activation, blueprint persistence, and checkout bootstrap.
 class TestLaunchBlockersApi:
     @pytest.fixture
     def auth_ctx(self, api_client, base_url):
@@ -39,18 +39,13 @@ class TestLaunchBlockersApi:
         assert me_data.get("email") == auth_ctx["email"]
         assert me_data.get("is_premium") is False
 
-    def test_premium_activation_refreshes_state_in_auth_me(self, api_client, base_url, auth_ctx):
+    def test_direct_premium_activation_remains_disabled(self, api_client, base_url, auth_ctx):
         activate_response = api_client.post(
             f"{base_url}/api/premium/activate",
             headers=auth_ctx["headers"],
-            json={"code": "CAD_PREMIUM_2025"},
+            json={"code": "disabled-test-value"},
         )
-        assert activate_response.status_code == 200
-        assert activate_response.json().get("is_premium") is True
-
-        me_response = api_client.get(f"{base_url}/api/auth/me", headers=auth_ctx["headers"])
-        assert me_response.status_code == 200
-        assert me_response.json().get("is_premium") is True
+        assert activate_response.status_code == 501
 
     def test_blueprint_create_get_list_delete_persists_correctly(self, api_client, base_url, auth_ctx):
         blueprint_payload = {
