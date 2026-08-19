@@ -24,6 +24,10 @@ jobs:
       - name: Compile backend source
         run: python -m compileall -q Blueprint-Clean/backend
 
+      - name: Test subscription access policy
+        working-directory: Blueprint-Clean/backend
+        run: python -m unittest discover -s tests -p "test_subscription_policy.py"
+
       - name: Verify production safety guards
         shell: python
         run: |
