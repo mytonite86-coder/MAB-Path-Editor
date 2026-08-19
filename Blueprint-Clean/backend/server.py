@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import hmac
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
@@ -60,6 +61,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+ALL_PRODUCTS_LIFETIME_ENTITLEMENT = "all_products_lifetime"
+ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID = os.environ.get(
+    "ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID",
+    "",
+).strip()
+SETTLED_PAYMENT_STATUSES = {"paid", "no_payment_required"}
 
 PREMIUM_PACKAGES = {
     "premium_lifetime": {
@@ -282,17 +289,56 @@ def get_subscription_period_end(subscription):
 
     return None
 
+def checkout_promotion_code_ids(stripe_session) -> set[str]:
+    promotion_code_ids: set[str] = set()
+    discounts = stripe_value(stripe_session, "discounts", []) or []
+
+    for discount in discounts:
+        promotion_code_id = stripe_id(
+            stripe_value(discount, "promotion_code")
+        )
+        if promotion_code_id:
+            promotion_code_ids.add(promotion_code_id)
+
+    return promotion_code_ids
+
+
+def has_all_products_lifetime_promotion(stripe_session) -> bool:
+    expected_id = ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID
+
+    if not expected_id:
+        return False
+
+    return any(
+        hmac.compare_digest(expected_id, promotion_code_id)
+        for promotion_code_id in checkout_promotion_code_ids(stripe_session)
+    )
+
+
 async def grant_product_entitlement(
     user_id: str,
     product_id: str,
 ) -> None:
+    entitlements = [product_id]
     update_document = {
         "$addToSet": {
             "entitlements": product_id,
         }
     }
 
-    if product_id == "mab_s1":
+    if product_id == ALL_PRODUCTS_LIFETIME_ENTITLEMENT:
+        entitlements.extend(["mab_s1", "pathseal"])
+        update_document = {
+            "$addToSet": {
+                "entitlements": {
+                    "$each": entitlements,
+                }
+            },
+            "$set": {
+                "is_premium": True,
+            },
+        }
+    elif product_id == "mab_s1":
         update_document["$set"] = {
             "is_premium": True,
         }
@@ -635,7 +681,32 @@ async def process_checkout_session(
         },
     )
 
-    if product_id == "mab_s1" and payment_status == "paid":
+    if (
+        payment_status in SETTLED_PAYMENT_STATUSES
+        and has_all_products_lifetime_promotion(stripe_session)
+    ):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        gift_result = await payment_transactions_collection.update_one(
+            {
+                "session_id": session_id,
+                "all_products_lifetime_granted": {"$ne": True},
+            },
+            {
+                "$set": {
+                    "all_products_lifetime_granted": True,
+                    "access_active": True,
+                    "all_products_lifetime_granted_at": now_iso,
+                    "updated_at": now_iso,
+                }
+            },
+        )
+        if gift_result.modified_count:
+            await grant_product_entitlement(
+                transaction["user_id"],
+                ALL_PRODUCTS_LIFETIME_ENTITLEMENT,
+            )
+
+    if product_id == "mab_s1" and payment_status in SETTLED_PAYMENT_STATUSES:
         return await apply_premium_upgrade(
             session_id,
             transaction["user_id"],
@@ -843,7 +914,6 @@ async def create_checkout_session(
         payment_method_collection="if_required",
         
         mode=package["billing_mode"],
-        payment_method_types=["card"],
         line_items=[
             {
                 "price_data": price_data,
@@ -913,7 +983,11 @@ async def get_checkout_status(
         )
 
     try:
-        stripe_session = stripe.checkout.Session.retrieve(session_id)
+        configure_stripe()
+        stripe_session = stripe.checkout.Session.retrieve(
+            session_id,
+            expand=["discounts"],
+        )
     except stripe.error.StripeError as exc:
         raise HTTPException(
             status_code=502,
