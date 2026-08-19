@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -33,6 +34,7 @@ from auth import (
 from signaldrift import build_signaldrift_event, forward_signaldrift_event
 from subscription_policy import pathseal_access_action
 from checkout_origins import validate_checkout_origin
+from readiness import build_readiness_report
 
 
 ROOT_DIR = Path(__file__).parent
@@ -1128,7 +1130,16 @@ async def relay_pathseal_event(event: dict):
 
 @api_router.get("/health")
 async def health_check():
+    """Liveness probe: confirms that the API process can answer."""
     return {"status": "healthy", "timestamp": datetime.utcnow()}
+
+
+@api_router.get("/ready")
+async def readiness_check():
+    """Readiness probe: verifies required configuration and MongoDB."""
+    report = await build_readiness_report(client)
+    status_code = 200 if report["ready"] else 503
+    return JSONResponse(status_code=status_code, content=report)
 
 
 # Include the router in the main app
