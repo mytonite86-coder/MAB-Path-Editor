@@ -32,6 +32,11 @@ from auth import (
     get_current_user_optional,
 )
 from signaldrift import build_signaldrift_event, forward_signaldrift_event
+from checkout_attribution import (
+    attribution_metadata,
+    build_payment_completed_event,
+    normalize_checkout_attribution,
+)
 from subscription_policy import pathseal_access_action
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
@@ -71,6 +76,10 @@ ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID = os.environ.get(
     "",
 ).strip()
 SETTLED_PAYMENT_STATUSES = {"paid", "no_payment_required"}
+SUCCESSFUL_CHECKOUT_EVENTS = {
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+}
 
 PREMIUM_PACKAGES = {
     "premium_lifetime": {
@@ -572,6 +581,71 @@ async def sync_pathseal_subscription(
             )
 
     return True
+
+
+async def track_pathseal_payment_completed(transaction: dict) -> None:
+    """Forward one trusted payment event without blocking customer access."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    claim = await payment_transactions_collection.update_one(
+        {
+            "_id": transaction["_id"],
+            "signaldrift_payment_event_state": {
+                "$nin": ["sending", "sent"],
+            },
+        },
+        {
+            "$set": {
+                "signaldrift_payment_event_state": "sending",
+                "signaldrift_payment_event_claimed_at": now_iso,
+            }
+        },
+    )
+
+    if claim.modified_count == 0:
+        return
+
+    payload = build_payment_completed_event(
+        transaction,
+        occurred_at=now_iso,
+    )
+
+    try:
+        await forward_signaldrift_event(payload)
+    except Exception as exc:
+        await payment_transactions_collection.update_one(
+            {"_id": transaction["_id"]},
+            {
+                "$set": {
+                    "signaldrift_payment_event_state": "failed",
+                    "signaldrift_payment_event_error_at": (
+                        datetime.now(timezone.utc).isoformat()
+                    ),
+                }
+            },
+        )
+        logger.warning(
+            "PathSeal access granted, but payment analytics failed for %s: %s",
+            transaction.get("session_id"),
+            str(exc),
+        )
+        return
+
+    await payment_transactions_collection.update_one(
+        {"_id": transaction["_id"]},
+        {
+            "$set": {
+                "signaldrift_payment_event_state": "sent",
+                "signaldrift_payment_event_sent_at": (
+                    datetime.now(timezone.utc).isoformat()
+                ),
+            },
+            "$unset": {
+                "signaldrift_payment_event_error_at": "",
+            },
+        },
+    )
+
+
 async def process_checkout_session(
     stripe_session,
     event_type: Optional[str] = None,
@@ -718,10 +792,27 @@ async def process_checkout_session(
             )
             return False
 
-        return await sync_pathseal_subscription(
+        subscription_synced = await sync_pathseal_subscription(
             subscription,
             event_type=event_type,
         )
+
+        if (
+            subscription_synced
+            and payment_status in SETTLED_PAYMENT_STATUSES
+            and event_type in SUCCESSFUL_CHECKOUT_EVENTS
+        ):
+            refreshed_transaction = (
+                await payment_transactions_collection.find_one(
+                    {"session_id": session_id}
+                )
+            )
+            if refreshed_transaction:
+                await track_pathseal_payment_completed(
+                    refreshed_transaction
+                )
+
+        return subscription_synced
 
     return True
 
@@ -862,6 +953,15 @@ async def create_checkout_session(
 )
     configure_stripe()
 
+    attribution = normalize_checkout_attribution(
+        {
+            "visitor_id": checkout_request.visitor_id,
+            "source": checkout_request.source,
+            "medium": checkout_request.medium,
+            "campaign": checkout_request.campaign,
+        }
+    )
+
     metadata = {
         "user_id": current_user["user_id"],
         "user_email": current_user["email"],
@@ -870,6 +970,7 @@ async def create_checkout_session(
         "billing_mode": package["billing_mode"],
         "interval": package["interval"] or "",
         "upgrade_type": "premium",
+        **attribution_metadata(attribution),
     }
     price_data = {
         "currency": package["currency"].lower(),
@@ -934,6 +1035,7 @@ async def create_checkout_session(
         "amount": package["amount"],
         "currency": package["currency"],
         "metadata": metadata,
+        "attribution": attribution,
         "status": "open",
         "payment_status": "pending",
         "processed_upgrade": False,
