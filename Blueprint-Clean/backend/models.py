@@ -71,6 +71,10 @@ class PaymentPackageResponse(BaseModel):
 class CreateCheckoutSessionRequest(BaseModel):
     package_id: str
     origin_url: str
+    visitor_id: Optional[str] = None
+    source: Optional[str] = None
+    medium: Optional[str] = None
+    campaign: Optional[str] = None
 
 
 class CreateCheckoutSessionResponse(BaseModel):
