@@ -89,9 +89,6 @@ export default function Profile() {
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
-        console.log("TOKEN:", token);
-console.log("SESSION:", sessionId);
-console.log("API:", `${API_URL}/api/payments/checkout/status/${sessionId}`);
         const response = await fetch(`${API_URL}/api/payments/checkout/status/${sessionId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -103,7 +100,7 @@ console.log("API:", `${API_URL}/api/payments/checkout/status/${sessionId}`);
         }
 
         const data = await response.json();
-        if (data.payment_status === 'paid') {
+        if (['paid', 'no_payment_required'].includes(data.payment_status)) {
           await refreshUser();
           setPaymentTone('success');
           setPaymentMessage('Payment successful. Premium has been unlocked on your account.');
