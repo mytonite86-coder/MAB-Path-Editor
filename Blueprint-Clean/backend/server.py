@@ -31,6 +31,7 @@ from auth import (
     get_current_user_optional,
 )
 from signaldrift import build_signaldrift_event, forward_signaldrift_event
+from subscription_policy import pathseal_access_action
 
 
 ROOT_DIR = Path(__file__).parent
@@ -219,19 +220,6 @@ def build_checkout_return_urls(
     )
 
     return success_url, cancel_url
-PATHSEAL_GRANT_STATUSES = {
-    "active",
-    "trialing",
-}
-
-PATHSEAL_REVOKE_STATUSES = {
-    "canceled",
-    "unpaid",
-    "incomplete_expired",
-    "paused",
-}
-
-
 def stripe_value(stripe_object, key: str, default=None):
     if stripe_object is None:
         return default
@@ -539,10 +527,10 @@ async def sync_pathseal_subscription(
     if event_type:
         update_fields["last_event_type"] = event_type
 
-    if subscription_status in PATHSEAL_GRANT_STATUSES:
+    if pathseal_access_action(subscription_status) == "grant":
         update_fields["access_active"] = True
 
-    elif subscription_status in PATHSEAL_REVOKE_STATUSES:
+    elif pathseal_access_action(subscription_status) == "revoke":
         update_fields["access_active"] = False
 
     if transaction:
@@ -555,13 +543,13 @@ async def sync_pathseal_subscription(
             },
         )
 
-    if subscription_status in PATHSEAL_GRANT_STATUSES:
+    if pathseal_access_action(subscription_status) == "grant":
         await grant_product_entitlement(
             user_id,
             "pathseal",
         )
 
-    elif subscription_status in PATHSEAL_REVOKE_STATUSES:
+    elif pathseal_access_action(subscription_status) == "revoke":
         other_active_subscription = (
             await payment_transactions_collection.find_one(
                 {
