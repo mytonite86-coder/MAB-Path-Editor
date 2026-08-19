@@ -32,6 +32,7 @@ from auth import (
 )
 from signaldrift import build_signaldrift_event, forward_signaldrift_event
 from subscription_policy import pathseal_access_action
+from checkout_origins import validate_checkout_origin
 
 
 ROOT_DIR = Path(__file__).parent
@@ -157,14 +158,13 @@ def build_access_token_for_user(
     )
 
 def validate_origin_url(origin_url: str) -> str:
-    parsed = urlparse(origin_url)
-    if parsed.scheme in {"http", "https"} and parsed.netloc:
-        return origin_url.rstrip("/")
-
-    if parsed.scheme and parsed.scheme not in {"http", "https"}:
-        return origin_url.rstrip("/")
-
-    raise HTTPException(status_code=400, detail="Invalid origin URL")
+    try:
+        return validate_checkout_origin(origin_url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
 
 def build_checkout_return_urls(
