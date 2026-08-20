@@ -23,6 +23,8 @@ from models import (
     CreateCheckoutSessionRequest,
     CreateCheckoutSessionResponse,
     PaymentStatusResponse,
+    SvgSubscriptionQuoteRequest,
+    SvgSubscriptionQuoteResponse,
 )
 from auth import (
     get_password_hash,
@@ -40,6 +42,10 @@ from checkout_attribution import (
 from subscription_policy import pathseal_access_action
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
+from svg_subscription import (
+    SvgSubscriptionSelectionError,
+    quote_svg_subscription,
+)
 
 
 ROOT_DIR = Path(__file__).parent
@@ -927,6 +933,24 @@ async def activate_premium(
 @api_router.get("/payments/packages", response_model=List[PaymentPackageResponse])
 async def get_payment_packages():
     return [PaymentPackageResponse(**package) for package in PREMIUM_PACKAGES.values()]
+
+
+@api_router.post(
+    "/payments/svg-subscription/quote",
+    response_model=SvgSubscriptionQuoteResponse,
+)
+async def get_svg_subscription_quote(
+    quote_request: SvgSubscriptionQuoteRequest,
+):
+    try:
+        return quote_svg_subscription(
+            quote_request.selected_product_ids
+        )
+    except SvgSubscriptionSelectionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
 
 @api_router.post(
