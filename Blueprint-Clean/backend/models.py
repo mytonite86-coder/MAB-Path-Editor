@@ -82,6 +82,29 @@ class CreateCheckoutSessionResponse(BaseModel):
     session_id: str
 
 
+class SvgSubscriptionQuoteRequest(BaseModel):
+    selected_product_ids: List[str]
+
+
+class SvgSubscriptionLineItem(BaseModel):
+    product_id: str
+    name: str
+    unit_amount_cents: int
+
+
+class SvgSubscriptionQuoteResponse(BaseModel):
+    currency: str
+    interval: str
+    selected_product_ids: List[str]
+    tool_count: int
+    unit_amount_cents: int
+    subtotal_cents: int
+    discount_percent: int
+    discount_cents: int
+    total_cents: int
+    line_items: List[SvgSubscriptionLineItem]
+
+
 class PaymentStatusResponse(BaseModel):
     session_id: str
     package_id: str
