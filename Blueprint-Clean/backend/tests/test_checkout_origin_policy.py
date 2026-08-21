@@ -11,6 +11,7 @@ class CheckoutOriginPolicyTests(unittest.TestCase):
             "https://mytonite86-coder.github.io",
             "https://mytonite86-coder.github.io/MAB-Path-Editor/",
             "https://mytonite86-coder.github.io/svg-path-closer/",
+            "https://mytonite86-coder.github.io/svg-path-closer/pathseal.html",
         )
         for origin in allowed:
             with self.subTest(origin=origin):
