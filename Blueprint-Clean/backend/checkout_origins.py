@@ -6,6 +6,7 @@ DEFAULT_CHECKOUT_ALLOWED_ORIGINS = {
     "https://mytonite86-coder.github.io",
     "https://mytonite86-coder.github.io/MAB-Path-Editor",
     "https://mytonite86-coder.github.io/svg-path-closer",
+    "https://mytonite86-coder.github.io/svg-path-closer/pathseal.html",
 }
 
 DEFAULT_CHECKOUT_ALLOWED_SCHEMES = {
