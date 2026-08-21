@@ -28,3 +28,29 @@ Before production checkout is added:
 7. Use Stripe Billing with Checkout Sessions, omit `payment_method_types`, and
    add an `integration_identifier` on the current Stripe API version.
 8. Do not enable automatic tax until registrations are confirmed.
+
+## Checkout configuration boundary
+
+`build_svg_checkout_plan` prepares—but does not submit—the Stripe Checkout
+line items, count-based coupon, and bounded subscription metadata. It fails
+closed when any required identifier is absent.
+
+Required configuration names for currently available tools:
+
+- `STRIPE_PRICE_PATHSEAL_MONTHLY`
+- `STRIPE_PRICE_DUPLICATE_GEOMETRY_MONTHLY`
+- `STRIPE_COUPON_SVG_TWO_TOOLS`
+
+Future tool Price and discount Coupon configuration names already exist in the
+policy module but are not required until those tools become available. Values
+must come from an isolated Stripe test environment first and must never be
+committed. Checkout must remain disconnected until webhook-driven entitlement
+reconciliation is implemented and tested for each selected product ID.
+
+`parse_svg_product_ids` rejects duplicate or unknown metadata values.
+`plan_svg_entitlement_transition` defines the fail-closed webhook policy:
+active subscriptions grant the current selection and revoke removed
+selections; canceled subscription states revoke the complete selection;
+incomplete or unknown states hold existing access unchanged. These functions
+perform no database writes and provide the tested contract for the next
+integration step.
