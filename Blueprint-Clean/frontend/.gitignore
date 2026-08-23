@@ -7,6 +7,10 @@ node_modules/
 .expo/
 dist/
 web-build/
+.expo-export-check/
+
+# Owner-supplied local regression fixtures (may contain private production files)
+test-fixtures/cnc-samples/
 expo-env.d.ts
 
 # Native

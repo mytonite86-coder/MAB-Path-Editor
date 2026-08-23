@@ -22,7 +22,6 @@
         "bundleIdentifier": "com.mabs1patheditor.app",
         "supportsTablet": true,
         "infoPlist": {
-          "NSPhotoLibraryUsageDescription": "Select sketches for CAD conversion",
           "CFBundleURLTypes": [
             {
               "CFBundleURLSchemes": [
@@ -40,9 +39,6 @@
           "backgroundColor": "#000000"
         },
         "edgeToEdgeEnabled": true,
-        "permissions": [
-          "READ_MEDIA_IMAGES"
-        ],
         "blockedPermissions": [
           "android.permission.CAMERA",
           "android.permission.RECORD_AUDIO"

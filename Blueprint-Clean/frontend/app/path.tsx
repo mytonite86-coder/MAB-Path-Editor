@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 
 import {
   View,
@@ -12,12 +12,39 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
+import {
+  decodeTextDocument,
+  detectContainer,
+  encodeTextDocument,
+  interpretToolpath,
+  patchMotionBlock,
+  readMotionBlockValues,
+  serializeTextDocument,
+  type TextDocument,
+} from '../utils/gcodeDocument';
+
+type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
+
+type ToolpathPoint = {
+  x: number;
+  y: number;
+  line?: number;
+  mode?: MovementMode;
+  pierce?: boolean;
+  commandEnd?: boolean;
+};
+
+const movementColor: Record<MovementMode, string> = {
+  G00: '#FF9F0A',
+  G01: '#35D0E5',
+  G02: '#64D2FF',
+  G03: '#5E5CE6',
+};
 
 export default function Path() {
   const codeScrollRef = useRef<ScrollView>(null);
@@ -28,9 +55,16 @@ const isSyncingScroll = useRef(false);
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
  const [insertLineText, setInsertLineText] = useState('G1 X0 Y0');
 const [fileContent, setFileContent] = useState<string[]>([]);
-const [history, setHistory] = useState<string[][]>([]);
+const [lineEndings, setLineEndings] = useState<string[]>([]);
+const [hasUtf8Bom, setHasUtf8Bom] = useState(false);
+const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
-const [fileType, setFileType] = useState('Unknown');
+
+const currentDocument = (): TextDocument => ({
+  lines: fileContent,
+  endings: lineEndings,
+  hasUtf8Bom,
+});
 
 const [zoom, setZoom] = useState(1);
 const [panX, setPanX] = useState(0);
@@ -44,6 +78,21 @@ const [editG, setEditG] = useState('');
 const [editI, setEditI] = useState('');
 const [editJ, setEditJ] = useState('');
 const [scrollLocked, setScrollLocked] = useState(false);
+const [showLineIds, setShowLineIds] = useState(false);
+
+const selectSourceLine = (line: number) => {
+  const values = readMotionBlockValues(fileContent, line);
+  setSelectedLine(line);
+  setEditG(values.G ?? '');
+  setEditX(values.X ?? '');
+  setEditY(values.Y ?? '');
+  setEditI(values.I ?? '');
+  setEditJ(values.J ?? '');
+  codeScrollRef.current?.scrollTo({
+    y: Math.max(0, line * 24 - 72),
+    animated: true,
+  });
+};
 
 let selectedText = '';
 
@@ -65,151 +114,12 @@ if (selectedLine !== null) {
   }
 }
 
-const xMatch = selectedText.match(/X(-?\d+\.?\d*)/);
-const yMatch = selectedText.match(/Y(-?\d+\.?\d*)/); 
-const gMatch = selectedText.match(/(G\d+)/);
-const iMatch = selectedText.match(/(I-?\d+\.?\d*)/);
-const jMatch = selectedText.match(/(J-?\d+\.?\d*)/);
-     
-
-
-
-  
-
-
-const parsedCoords =
-  selectedLine !== null
-    ? fileContent.slice(0, selectedLine + 1).reduce(
-        (coords, line) => {
-          const xMatch = line.match(/X(-?\d+\.?\d*)/);
-          const yMatch = line.match(/Y(-?\d+\.?\d*)/);
-
-          return {
-            x: xMatch ? parseFloat(xMatch[1]) : coords.x,
-            y: yMatch ? parseFloat(yMatch[1]) : coords.y,
-          };
-        },
-        { x: 0, y: 0 }
-      )
-    : null;
-
-const toolpath = (() => {
- const points: { x: number; y: number; line?: number; pierce?: boolean }[] = [];
-  let current = { x: 0, y: 0 };
-  let command: any = null;
-  let needsPierce = false;
-
- console.log('LINES:', fileContent.length);
-
-  const finishCommand = () => {
-    if (!command) return;
-
-   const end = {
-  x: current.x + (command.x ?? 0),
-  y: current.y + (command.y ?? 0),
-}; 
-
-    if (command.mode === 'G02' || command.mode === 'G03') {
-      let isPierce = false;
-
-if (needsPierce) {
-  isPierce = true;
-  needsPierce = false;
-}
-      const cx = current.x + (command.i ?? 0);
-      const cy = current.y + (command.j ?? 0);
-
-      const startAngle = Math.atan2(current.y - cy, current.x - cx);
-      const endAngle = Math.atan2(end.y - cy, end.x - cx);
-      const radius = Math.sqrt((current.x - cx) ** 2 + (current.y - cy) ** 2);
-      if (radius === 0 || !command.i && !command.j) {
-  points.push(end)
-  current = end;
-  return;
-}
-
-      let sweep = endAngle - startAngle;
-     if (command.mode === 'G02') {
-      let isPierce = false;
-
-if (needsPierce) {
-  isPierce = true;
-  needsPierce = false;
-}
-  if (sweep > 0) sweep -= Math.PI * 2;
-} else {
-  if (sweep < 0) sweep += Math.PI * 2;
-}
-      
-
-      const steps = Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8));
-
-      for (let s = 1; s <= steps; s++) {
-        const angle = startAngle + (sweep * s) / steps;
-        points.push({
-  x: cx + Math.cos(angle) * radius,
-  y: cy + Math.sin(angle) * radius,
-  line: command.line,
-  pierce: isPierce,
-});
-      }
-
-      current = end;
-      return;
-    }
-
-    if (command.mode === 'G00') {
-      needsPierce = true;
-  current = end;
-  points.push({ x: NaN, y: NaN }); // break the line
-  return;
-}
-
-if (command.mode === 'G01') {
-  let isPierce = false;
-
-if (needsPierce) {
-  isPierce = true;
-  needsPierce = false;
-}
-  points.push(end)
-  current = end;
-}
-  };
-
-  fileContent.forEach((line, lineIndex) => {
-    const gMatch = line.match(/G0?[0123]/);
-
-    if (gMatch) {
-  // Only finish if we already had a command AND movement
-  if (command && (command.x !== undefined || command.y !== undefined)) {
-    finishCommand();
-  }
-
-  command = {
-  mode: gMatch[0].padStart(3, '0'),
-  line: lineIndex
-};
-  return;
-}
-
-    if (!command) return;
-
-    const xMatch = line.match(/X(-?\d+\.?\d*)/);
-    const yMatch = line.match(/Y(-?\d+\.?\d*)/);
-    const iMatch = line.match(/I(-?\d+\.?\d*)/);
-    const jMatch = line.match(/J(-?\d+\.?\d*)/);
-
-    if (xMatch) command.x = parseFloat(xMatch[1]);
-    if (yMatch) command.y = parseFloat(yMatch[1]);
-    if (iMatch) command.i = parseFloat(iMatch[1]);
-    if (jMatch) command.j = parseFloat(jMatch[1]);
-  });
-
-  finishCommand();
-
-  return points;
-})();
+const toolpath: ToolpathPoint[] = interpretToolpath(fileContent);
+const parsedCoords = selectedLine === null
+  ? null
+  : [...toolpath]
+      .reverse()
+      .find(point => point.line !== undefined && point.line <= selectedLine) ?? { x: 0, y: 0 };
   const cleanPoints = toolpath.filter(p => !Number.isNaN(p.x) && !Number.isNaN(p.y));
   
 const xs = cleanPoints.map(p => p.x);
@@ -254,25 +164,40 @@ return (
   const file = result.assets[0];
 
   if (file.uri) {
-  const content = await fetch(file.uri).then(r => r.text());
-  
-    setFileName(file.name || 'Imported file');   // 👈 ADD THIS
-    
-   const ext = file.name?.split('.').pop()?.toLowerCase();
+  const response = await fetch(file.uri);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const container = detectContainer(bytes);
 
-if (ext === 'nc' || ext === 'tap' || ext === 'gcode') {
-  setFileType('G-Code');
-} else if (ext === 'dxf' || ext === 'dwg') {
-  setFileType('AutoCAD');
-} else {
-  setFileType('Unknown');
-} 
-   const lines = content
-  .replace(/\r?\n/g, '\n')
-  .replace(/(?=[A-Z][\d.-])/g, '\n')
-  .split('\n')
-  .filter(line => line.trim() !== '');
-setFileContent(lines);                    // 👈 ADD THIS
+  if (container === 'dwg') {
+    Alert.alert(
+      'DWG-based CNC file recognized',
+      'This file uses an AutoCAD DWG container. MAB preserved the requirement, but safe DWG editing/export is not enabled yet.'
+    );
+    return;
+  }
+
+  if (container !== 'text') {
+    Alert.alert(
+      'Binary CNC format recognized',
+      'MAB does not yet have a verified round-trip codec for this binary format.'
+    );
+    return;
+  }
+
+  try {
+    const document = decodeTextDocument(bytes);
+    setFileName(file.name || 'Imported file');
+    setFileContent(document.lines);
+    setLineEndings(document.endings);
+    setHasUtf8Bom(document.hasUtf8Bom);
+    setHistory([]);
+    setSelectedLine(null);
+  } catch {
+    Alert.alert(
+      'Unsupported text encoding',
+      'This controller program is not valid UTF-8. MAB left the source file unchanged.'
+    );
+  }
 
   }
 }
@@ -303,7 +228,7 @@ setFileContent(lines);                    // 👈 ADD THIS
       return (
         <View key={i}>
           <Text
-            onPress={() => setSelectedLine(i)}
+            onPress={() => selectSourceLine(i)}
             style={[
               styles.panelText,
               line.includes('G') && { color: '#4FC3F7' },
@@ -333,7 +258,33 @@ setFileContent(lines);                    // 👈 ADD THIS
 
   
 <View style={styles.panel}>
-  <Text style={styles.panelTitle}>Preview</Text>
+  <View style={styles.previewHeader}>
+    <Text style={styles.panelTitle}>Preview</Text>
+    <TouchableOpacity
+      accessibilityRole="switch"
+      accessibilityState={{ checked: showLineIds }}
+      style={[styles.idToggle, showLineIds && styles.idToggleActive]}
+      onPress={() => setShowLineIds(value => !value)}
+    >
+      <Text style={styles.idToggleText}>
+        {showLineIds ? 'Line IDs On' : 'Show Line IDs'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+  <View style={styles.legend}>
+    {([
+      ['#FF9F0A', 'Rapid'],
+      ['#35D0E5', 'Cut'],
+      ['#64D2FF', 'CW arc'],
+      ['#5E5CE6', 'CCW arc'],
+      ['#FF453A', 'Pierce'],
+    ] as const).map(([color, label]) => (
+      <View key={label} style={styles.legendItem}>
+        <View style={[styles.legendSwatch, { backgroundColor: color }]} />
+        <Text style={styles.legendText}>{label}</Text>
+      </View>
+    ))}
+  </View>
   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
   <TouchableOpacity style={styles.primaryButton} onPress={() => setZoom(Math.max(0.5, zoom - 0.5))}>
     <Text style={styles.primaryText}>Zoom -</Text>
@@ -366,7 +317,7 @@ setFileContent(lines);                    // 👈 ADD THIS
   }}
   scrollEventThrottle={16}
   style={{ height: 200, maxHeight: 200, backgroundColor: '#111', overflow: 'hidden' }}
-  onStartShouldSetResponder={() => true}
+  onStartShouldSetResponder={() => false}
   onResponderGrant={(e) => {
     setIsDragging(true);
     setLastX(e.nativeEvent.pageX);
@@ -415,21 +366,65 @@ const y2 = (point.y - minY) * scale;
   const length = Math.sqrt(dx * dx + dy * dy);
   const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
+  const isSelected = point.line === selectedLine;
+  const color = point.mode ? movementColor[point.mode] : '#35D0E5';
+
   return (
-    <View
-      key={i}
+    <React.Fragment key={i}>
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={point.line === undefined
+        ? 'Toolpath movement'
+        : `Select source line ${point.line + 1}`}
+      activeOpacity={0.7}
+      disabled={point.line === undefined}
+      onPress={() => point.line !== undefined && selectSourceLine(point.line)}
       style={{
         position: 'absolute',
         left: x1 + (200 - width * scale) / 2 + panX,
-        top: y1 + (200 - height * scale) / 2 + panY,
+        top: y1 + (200 - height * scale) / 2 + panY - 6,
         width: length,
-        
-        backgroundColor: point.line === selectedLine ? 'yellow' : 'cyan',
-height: point.line === selectedLine ? 4 : 2,
+        height: 14,
+        borderTopColor: isSelected ? '#FFD60A' : color,
+        borderTopWidth: isSelected ? 4 : 2,
+        borderStyle: point.mode === 'G00' ? 'dashed' : 'solid',
+        paddingVertical: 6,
         transform: [{ rotate: `${angle}deg` }],
         transformOrigin: 'left center',
       }}
     />
+    {point.pierce && (
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Pierce at source line ${(point.line ?? 0) + 1}`}
+        onPress={() => point.line !== undefined && selectSourceLine(point.line)}
+        style={[
+          styles.pierceMarker,
+          {
+            left: x1 + (200 - width * scale) / 2 + panX - 5,
+            top: y1 + (200 - height * scale) / 2 + panY - 5,
+          },
+        ]}
+      />
+    )}
+    {showLineIds && point.commandEnd && point.line !== undefined && (
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Select source line ${point.line + 1}`}
+        onPress={() => selectSourceLine(point.line!)}
+        style={[
+          styles.lineIdBadge,
+          {
+            left: x2 + (200 - width * scale) / 2 + panX + 4,
+            top: y2 + (200 - height * scale) / 2 + panY - 9,
+          },
+          isSelected && styles.lineIdBadgeSelected,
+        ]}
+      >
+        <Text style={styles.lineIdText}>{point.line + 1}</Text>
+      </TouchableOpacity>
+    )}
+    </React.Fragment>
   );
 })}
       
@@ -438,6 +433,12 @@ height: point.line === selectedLine ? 4 : 2,
 
 <View style={styles.panel}>
   <Text style={styles.panelTitle}>G-Code</Text>
+
+  <Text style={styles.inspectNotice}>
+    {selectedLine !== null
+      ? `Inspecting Line ${selectedLine + 1} — selection does not modify code.`
+      : 'Select a code line or preview movement to inspect it. Selection does not modify code.'}
+  </Text>
 
   <ScrollView
   ref={codeScrollRef}
@@ -514,24 +515,34 @@ if (isGuest || !user || !isPro) {
   return;
 }
    try {
-  const content = fileContent.join('\n');
+  const sourceDocument = currentDocument();
+  const content = serializeTextDocument(sourceDocument);
+  const encoded = encodeTextDocument(sourceDocument);
+  const exportBytes = encoded.buffer.slice(
+    encoded.byteOffset,
+    encoded.byteOffset + encoded.byteLength
+  ) as ArrayBuffer;
+  const exportName = fileName || 'edited-program.gcode';
 
   if (Platform.OS === 'web') {
-    const blob = new Blob([content], { type: 'text/plain' });
+    const blob = new Blob([exportBytes], { type: 'application/octet-stream' });
     const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
     link.href = downloadUrl;
-    link.download = 'edited-program.cnc';
+    link.download = exportName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(downloadUrl);
   } else {
     const fileUri =
-      FileSystem.documentDirectory + 'edited-program.cnc';
+      FileSystem.documentDirectory + exportName;
 
-    await FileSystem.writeAsStringAsync(fileUri, content);
+    await FileSystem.writeAsStringAsync(
+      fileUri,
+      (hasUtf8Bom ? '\uFEFF' : '') + content
+    );
     await Sharing.shareAsync(fileUri);
   }
 } catch (err) {
@@ -548,28 +559,18 @@ if (isGuest || !user || !isPro) {
   onPress={() => {
     if (selectedLine === null) return;
 
-    setHistory(prev => [...prev, fileContent]);
+    const before = currentDocument();
+    const updated = patchMotionBlock(fileContent, selectedLine, {
+      X: editX,
+      Y: editY,
+      G: editG,
+      I: editI,
+      J: editJ,
+    });
 
-    const updated = [...fileContent];
+    if (updated.every((line, index) => line === fileContent[index])) return;
 
-    let start = selectedLine;
-
-    while (start > 0 && !updated[start].match(/^G0?[0123]/)) {
-      start--;
-    }
-
-    for (let i = start + 1; i < updated.length; i++) {
-      const line = updated[i];
-
-      if (line.match(/^G0?[0123]/)) break;
-
-      if (line.startsWith('X')) updated[i] = `X${editX}`;
-      if (line.startsWith('Y')) updated[i] = `Y${editY}`;
-      if (line.startsWith('G')) updated[i] = `G${editG}`;
-      if (line.startsWith('I')) updated[i] = `I${editI}`;
-      if (line.startsWith('J')) updated[i] = `J${editJ}`;
-    }
-
+    setHistory(prev => [...prev, before]);
     setFileContent(updated);
   }}
 >
@@ -586,7 +587,9 @@ if (isGuest || !user || !isPro) {
 
     const last = history[history.length - 1];
 
-    setFileContent(last);
+    setFileContent(last.lines);
+    setLineEndings(last.endings);
+    setHasUtf8Bom(last.hasUtf8Bom);
     setHistory(history.slice(0, -1));
   }}
 >
@@ -609,19 +612,36 @@ if (isGuest || !user || !isPro) {
         ? newLines.length
         : selectedLine + 1;
 
+   const newEndings = [...lineEndings];
+   const preferredEnding = lineEndings.find(ending => ending !== '') || '\n';
+   const insertedLines = [
+     'G03',
+     'X0',
+     'Y0',
+     'I0',
+     'J0'
+   ];
+
    newLines.splice(
   insertAt,
   0,
-  'G03',
-  'X0',
-  'Y0',
-  'I0',
-  'J0'
+  ...insertedLines
 );
 
-    setHistory([...history, fileContent]);
+    if (insertAt === fileContent.length && fileContent.length > 0 && newEndings[fileContent.length - 1] === '') {
+      newEndings[fileContent.length - 1] = preferredEnding;
+    }
+    const insertedEndings = insertedLines.map((_, index) =>
+      insertAt === fileContent.length && index === insertedLines.length - 1
+        ? ''
+        : preferredEnding
+    );
+    newEndings.splice(insertAt, 0, ...insertedEndings);
+
+    setHistory([...history, currentDocument()]);
     setFileContent(newLines);
-    setSelectedLine(insertAt);
+    setLineEndings(newEndings);
+    selectSourceLine(insertAt);
   }}
 >
   <Text style={styles.primaryText}>Add Line</Text>
@@ -634,7 +654,7 @@ if (isGuest || !user || !isPro) {
   return;
 }
 
-  await Clipboard.setStringAsync(fileContent.join('\n'));
+  await Clipboard.setStringAsync(serializeTextDocument(currentDocument()));
 }}
 >
   <Text style={styles.primaryText}>Copy G-code</Text>
@@ -702,6 +722,86 @@ secondaryButton: {
   panelText: {
     color: '#777',
     fontSize: 15,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  idToggle: {
+    backgroundColor: '#333',
+    borderColor: '#555',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  idToggleActive: {
+    backgroundColor: '#0A84FF',
+    borderColor: '#64D2FF',
+  },
+  idToggleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendSwatch: {
+    width: 12,
+    height: 3,
+    borderRadius: 2,
+  },
+  legendText: {
+    color: '#aaa',
+    fontSize: 11,
+  },
+  pierceMarker: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF453A',
+    borderColor: '#fff',
+    borderWidth: 1,
+    zIndex: 3,
+  },
+  lineIdBadge: {
+    position: 'absolute',
+    minWidth: 20,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(28, 28, 30, 0.9)',
+    borderColor: '#666',
+    borderWidth: 1,
+    zIndex: 4,
+  },
+  lineIdBadgeSelected: {
+    borderColor: '#FFD60A',
+    backgroundColor: 'rgba(90, 75, 0, 0.95)',
+  },
+  lineIdText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  inspectNotice: {
+    color: '#C7C7CC',
+    fontSize: 12,
+    marginBottom: 10,
   },
 
 });

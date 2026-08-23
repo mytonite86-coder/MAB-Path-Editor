@@ -39,7 +39,7 @@ const handleSubscribe = async () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-         package_id: 'premium_lifetime',
+          package_id: 'mab_s1_monthly',
           origin_url: originUrl,
         }),
       }
@@ -79,7 +79,7 @@ const handleSubscribe = async () => {
   contentContainerStyle={styles.container}
   showsVerticalScrollIndicator={false}
 >
-      <Text style={styles.title}>Unlock M.A.B. S1 Lifetime</Text>
+      <Text style={styles.title}>Unlock M.A.B. S1</Text>
 
       <Image
   source={require("../assets/images/featuredgraphic.png")}
@@ -88,7 +88,7 @@ const handleSubscribe = async () => {
 />
 
       <Text style={styles.subtitle}>
-        One purchase. Lifetime access. Unlimited G-code editing, repair, copy, and export.
+        Unlimited G-code editing, repair, copy, and export for $7.99 per month.
       </Text>
 
 
@@ -97,14 +97,14 @@ const handleSubscribe = async () => {
   <Text style={styles.featureItem}>✓ Unlimited G-code Editing</Text>
   <Text style={styles.featureItem}>✓ Repair Broken CNC Files</Text>
   <Text style={styles.featureItem}>✓ Export & Share G-code</Text>
-  <Text style={styles.featureItem}>✓ All Future M.A.B. S1 Updates</Text>
+  <Text style={styles.featureItem}>✓ M.A.B. S1 Updates While Subscribed</Text>
   </View>
 
       <TouchableOpacity
         style={styles.button}
         onPress={handleSubscribe}
       >
-        <Text style={styles.buttonText}>LifeTime Unlock • $19.99 •</Text>
+        <Text style={styles.buttonText}>Subscribe • $7.99/month</Text>
       </TouchableOpacity>
 
  

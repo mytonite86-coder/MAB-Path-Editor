@@ -10,12 +10,12 @@ export default function Index() {
   useEffect(() => {
     if (!isLoading) {
       if (user || isGuest) {
-        router.replace('/home');
+        router.replace('/path');
       } else {
         router.replace('/auth');
       }
     }
-  }, [isLoading, user, isGuest]);
+  }, [isLoading, user, isGuest, router]);
 
   return (
     <View style={styles.container}>

@@ -3,6 +3,9 @@ node_modules/
 .metro-cache/
 **/.metro-cache/
 **/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/dist-release-check/
 *.pyc
 *.env
 .env

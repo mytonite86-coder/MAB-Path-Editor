@@ -39,7 +39,7 @@ from checkout_attribution import (
     build_payment_completed_event,
     normalize_checkout_attribution,
 )
-from subscription_policy import pathseal_access_action
+from subscription_policy import has_any_entitlement, subscription_access_action
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
 from svg_subscription import (
@@ -82,28 +82,35 @@ ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID = os.environ.get(
     "",
 ).strip()
 SETTLED_PAYMENT_STATUSES = {"paid", "no_payment_required"}
+MAB_SUBSCRIPTION_ENTITLEMENT = "mab_s1_subscription"
+MAB_PERMANENT_ENTITLEMENTS = {
+    "mab_s1",
+    "founder_lifetime",
+    "complimentary_lifetime",
+    ALL_PRODUCTS_LIFETIME_ENTITLEMENT,
+}
 SUCCESSFUL_CHECKOUT_EVENTS = {
     "checkout.session.completed",
     "checkout.session.async_payment_succeeded",
 }
 
 PREMIUM_PACKAGES = {
-    "premium_lifetime": {
-        "package_id": "premium_lifetime",
+    "mab_s1_monthly": {
+        "package_id": "mab_s1_monthly",
         "product_id": "mab_s1",
-        "name": "M.A.B. S1 Lifetime Unlock",
+        "name": "M.A.B. S1 Path Editor",
         "description": (
             "Unlock premium editing and export tools in M.A.B. S1."
         ),
-        "amount": 19.99,
+        "amount": 7.99,
         "currency": "usd",
-        "billing_mode": "payment",
-        "interval": None,
+        "billing_mode": "subscription",
+        "interval": "month",
         "perks": [
             "Unlimited G-code editing",
             "Export edited CNC files",
             "Copy edited G-code",
-            "Lifetime M.A.B. S1 premium access",
+            "M.A.B. S1 premium access while subscribed",
         ],
     },
     "pathseal_monthly": {
@@ -137,6 +144,9 @@ def configure_stripe() -> None:
     stripe.api_key = STRIPE_API_KEY
 def get_user_entitlements(user: dict) -> list[str]:
     entitlements = set(user.get("entitlements") or [])
+
+    if MAB_SUBSCRIPTION_ENTITLEMENT in entitlements:
+        entitlements.add("mab_s1")
 
     # Preserve access for existing M.A.B. premium customers.
     if user.get("is_premium", False):
@@ -343,7 +353,7 @@ async def grant_product_entitlement(
                 "is_premium": True,
             },
         }
-    elif product_id == "mab_s1":
+    elif product_id in {"mab_s1", MAB_SUBSCRIPTION_ENTITLEMENT}:
         update_document["$set"] = {
             "is_premium": True,
         }
@@ -359,6 +369,28 @@ async def revoke_product_entitlement(
     product_id: str,
 ) -> None:
     if product_id == "mab_s1":
+        return
+
+    if product_id == MAB_SUBSCRIPTION_ENTITLEMENT:
+        user = await users_collection.find_one(
+            {"_id": ObjectId(user_id)},
+            {"entitlements": 1},
+        )
+        remaining_entitlements = set(
+            (user or {}).get("entitlements") or []
+        ) - {MAB_SUBSCRIPTION_ENTITLEMENT}
+        await users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$pull": {"entitlements": product_id},
+                "$set": {
+                    "is_premium": has_any_entitlement(
+                        remaining_entitlements,
+                        MAB_PERMANENT_ENTITLEMENTS,
+                    )
+                },
+            },
+        )
         return
 
     await users_collection.update_one(
@@ -444,7 +476,9 @@ async def apply_premium_upgrade(
     )
 
     return True
-async def sync_pathseal_subscription(
+
+
+async def sync_product_subscription(
     subscription,
     event_type: Optional[str] = None,
 ) -> bool:
@@ -485,12 +519,15 @@ async def sync_pathseal_subscription(
         package_id = package_id or transaction.get("package_id")
         product_id = product_id or transaction.get("product_id")
 
-    if not product_id and package_id == "pathseal_monthly":
-        product_id = "pathseal"
+    if not product_id:
+        product_id = {
+            "pathseal_monthly": "pathseal",
+            "mab_s1_monthly": "mab_s1",
+        }.get(package_id)
 
-    if not user_id or product_id != "pathseal":
+    if not user_id or product_id not in {"pathseal", "mab_s1"}:
         logger.warning(
-            "Could not resolve PathSeal subscription owner: %s",
+            "Could not resolve product subscription owner: %s",
             subscription_id,
         )
         return False
@@ -502,7 +539,7 @@ async def sync_pathseal_subscription(
     )
 
     update_fields = {
-        "product_id": "pathseal",
+        "product_id": product_id,
         "subscription_id": subscription_id,
         "subscription_status": subscription_status,
         "customer_id": stripe_id(
@@ -544,10 +581,12 @@ async def sync_pathseal_subscription(
     if event_type:
         update_fields["last_event_type"] = event_type
 
-    if pathseal_access_action(subscription_status) == "grant":
+    access_action = subscription_access_action(subscription_status)
+
+    if access_action == "grant":
         update_fields["access_active"] = True
 
-    elif pathseal_access_action(subscription_status) == "revoke":
+    elif access_action == "revoke":
         update_fields["access_active"] = False
 
     if transaction:
@@ -560,18 +599,24 @@ async def sync_pathseal_subscription(
             },
         )
 
-    if pathseal_access_action(subscription_status) == "grant":
+    entitlement_id = (
+        MAB_SUBSCRIPTION_ENTITLEMENT
+        if product_id == "mab_s1"
+        else "pathseal"
+    )
+
+    if access_action == "grant":
         await grant_product_entitlement(
             user_id,
-            "pathseal",
+            entitlement_id,
         )
 
-    elif pathseal_access_action(subscription_status) == "revoke":
+    elif access_action == "revoke":
         other_active_subscription = (
             await payment_transactions_collection.find_one(
                 {
                     "user_id": user_id,
-                    "product_id": "pathseal",
+                    "product_id": product_id,
                     "subscription_id": {
                         "$ne": subscription_id,
                     },
@@ -583,7 +628,7 @@ async def sync_pathseal_subscription(
         if not other_active_subscription:
             await revoke_product_entitlement(
                 user_id,
-                "pathseal",
+                entitlement_id,
             )
 
     return True
@@ -776,14 +821,18 @@ async def process_checkout_session(
                 ALL_PRODUCTS_LIFETIME_ENTITLEMENT,
             )
 
-    if product_id == "mab_s1" and payment_status in SETTLED_PAYMENT_STATUSES:
+    if (
+        product_id == "mab_s1"
+        and billing_mode == "payment"
+        and payment_status in SETTLED_PAYMENT_STATUSES
+    ):
         return await apply_premium_upgrade(
             session_id,
             transaction["user_id"],
             stripe_session,
         )
 
-    if product_id == "pathseal" and subscription_id:
+    if product_id in {"mab_s1", "pathseal"} and subscription_id:
         configure_stripe()
 
         try:
@@ -792,19 +841,20 @@ async def process_checkout_session(
             )
         except stripe.error.StripeError as exc:
             logger.warning(
-                "Unable to retrieve PathSeal subscription %s: %s",
+                "Unable to retrieve product subscription %s: %s",
                 subscription_id,
                 str(exc),
             )
             return False
 
-        subscription_synced = await sync_pathseal_subscription(
+        subscription_synced = await sync_product_subscription(
             subscription,
             event_type=event_type,
         )
 
         if (
-            subscription_synced
+            product_id == "pathseal"
+            and subscription_synced
             and payment_status in SETTLED_PAYMENT_STATUSES
             and event_type in SUCCESSFUL_CHECKOUT_EVENTS
         ):
@@ -1235,7 +1285,7 @@ async def stripe_webhook(request: Request):
         )
 
     elif event_type in subscription_events:
-        await sync_pathseal_subscription(
+        await sync_product_subscription(
             stripe_object,
             event_type=event_type,
         )

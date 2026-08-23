@@ -36,7 +36,7 @@ export default function Auth() {
       } else {
         await register(email, username, password);
       }
-      router.replace('/home');
+      router.replace('/path');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Authentication failed');
     } finally {
