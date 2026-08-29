@@ -1,0 +1,5 @@
+(Synthetic local test only - not a machine program)
+G20 G90
+G00 X0 Y0
+G01 X2.000 Y-3.500 F30 ; preserve comment
+M30

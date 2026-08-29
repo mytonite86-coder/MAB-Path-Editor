@@ -18,8 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import {
-  decodeTextDocument,
-  detectContainer,
+  importControllerDocument,
   encodeTextDocument,
   interpretToolpath,
   patchMotionBlock,
@@ -59,6 +58,7 @@ const [lineEndings, setLineEndings] = useState<string[]>([]);
 const [hasUtf8Bom, setHasUtf8Bom] = useState(false);
 const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
+const [importError, setImportError] = useState('');
 
 const currentDocument = (): TextDocument => ({
   lines: fileContent,
@@ -158,45 +158,24 @@ return (
     type: '*/*',
     copyToCacheDirectory: true,
   });
-  console.log('PICKER RESULT:', JSON.stringify(result, null, 2));
 
   if (!result.canceled) {
   const file = result.assets[0];
 
   if (file.uri) {
+  try {
   const response = await fetch(file.uri);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const container = detectContainer(bytes);
-
-  if (container === 'dwg') {
-    Alert.alert(
-      'DWG-based CNC file recognized',
-      'This file uses an AutoCAD DWG container. MAB preserved the requirement, but safe DWG editing/export is not enabled yet.'
-    );
-    return;
-  }
-
-  if (container !== 'text') {
-    Alert.alert(
-      'Binary CNC format recognized',
-      'MAB does not yet have a verified round-trip codec for this binary format.'
-    );
-    return;
-  }
-
-  try {
-    const document = decodeTextDocument(bytes);
+    const document = importControllerDocument(bytes);
     setFileName(file.name || 'Imported file');
+    setImportError('');
     setFileContent(document.lines);
     setLineEndings(document.endings);
     setHasUtf8Bom(document.hasUtf8Bom);
     setHistory([]);
     setSelectedLine(null);
-  } catch {
-    Alert.alert(
-      'Unsupported text encoding',
-      'This controller program is not valid UTF-8. MAB left the source file unchanged.'
-    );
+  } catch (error) {
+    setImportError(error instanceof Error ? error.message : 'Could not read this file. The current document and source are unchanged.');
   }
 
   }
@@ -206,6 +185,7 @@ return (
       <Ionicons name="cloud-upload-outline" size={28} color="#fff" />
       <Text style={styles.primaryText}>Import CNC File</Text>
     </TouchableOpacity>
+{importError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{importError}</Text>}
 {fileName !== '' && (
   <ScrollView
   ref={codeScrollRef}

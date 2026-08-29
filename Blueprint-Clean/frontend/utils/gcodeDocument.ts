@@ -19,9 +19,8 @@ export function detectContainer(bytes: Uint8Array): 'text' | 'dwg' | 'binary' {
   const signature = new TextDecoder('ascii').decode(bytes.slice(0, 6));
   if (/^AC10\d{2}$/.test(signature)) return 'dwg';
 
-  const probeLength = Math.min(bytes.length, 8192);
-  for (let index = 0; index < probeLength; index += 1) {
-    if (bytes[index] === 0) return 'binary';
+  for (const byte of bytes) {
+    if ((byte < 32 && ![9, 10, 13].includes(byte)) || byte === 127) return 'binary';
   }
 
   return 'text';
@@ -38,9 +37,45 @@ export function decodeTextDocument(bytes: Uint8Array): TextDocument {
     bytes[1] === UTF8_BOM[1] &&
     bytes[2] === UTF8_BOM[2];
   const body = hasUtf8Bom ? bytes.slice(3) : bytes;
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch {
+    throw new Error('Unsupported text encoding. Only valid UTF-8 is supported; the source was not converted.');
+  }
 
   return parseTextDocument(text, hasUtf8Bom);
+}
+
+/** Content evidence, not an extension whitelist or controller-safety claim. */
+export function importControllerDocument(bytes: Uint8Array): TextDocument {
+  const container = detectContainer(bytes);
+  if (container === 'dwg') {
+    throw new Error('DWG container recognized, regardless of filename. Safe DWG editing/export is not enabled.');
+  }
+  if (container === 'binary') {
+    throw new Error('Binary data or unsupported encoding recognized. A verified round-trip codec is required.');
+  }
+  const document = decodeTextDocument(bytes);
+  if (!serializeTextDocument(document).trim()) {
+    throw new Error('The selected file is empty; no controller program was found.');
+  }
+
+  let motionDeclared = false;
+  const numericWord = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
+  for (const line of document.lines) {
+    const code = executableCode(line).trim();
+    // Do not recognize words embedded in prose, config assignments or expressions.
+    if (!code || code.replace(numericWord, '').trim() !== '') continue;
+    const words = [...code.matchAll(numericWord)];
+    if (words.some(word => word[1].toUpperCase() === 'G' && [0, 1, 2, 3].includes(Number(word[2])))) {
+      motionDeclared = true;
+    }
+    if (motionDeclared && words.some(word => /^[XY]$/i.test(word[1]) && Number.isFinite(Number(word[2])))) {
+      return document;
+    }
+  }
+  throw new Error('No supported explicit G0–G3 / X–Y motion was recognized. Text alone does not establish a CNC program; the source is unchanged.');
 }
 
 export function parseTextDocument(text: string, hasUtf8Bom = false): TextDocument {
