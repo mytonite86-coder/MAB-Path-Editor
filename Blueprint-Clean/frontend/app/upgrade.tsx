@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '@/config/api';
 
 export default function Upgrade() {
   const router = useRouter();
@@ -31,7 +32,7 @@ const handleSubscribe = async () => {
         : 'http://127.0.0.1:8081';
 
     const response = await fetch(
-      `${process.env.EXPO_PUBLIC_BACKEND_URL}/api/payments/checkout/session`,
+      `${API_URL}/api/payments/checkout/session`,
       {
         method: 'POST',
         headers: {

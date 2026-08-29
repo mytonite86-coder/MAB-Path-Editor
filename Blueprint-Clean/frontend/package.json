@@ -9,6 +9,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "dev:auth-proxy": "node scripts/auth-dev-proxy.mjs",
+    "build:web:production": "expo export --platform web",
+    "verify:web:production": "node scripts/verify-production-export.mjs",
+    "release:web": "npm run build:web:production && npm run verify:web:production",
     "lint": "expo lint",
     "test:gcode": "node --test tests/gcodeDocument.test.ts"
   },

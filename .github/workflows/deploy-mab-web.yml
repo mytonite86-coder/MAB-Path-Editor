@@ -1,0 +1,50 @@
+name: Deploy MAB web
+
+on:
+  push:
+    branches:
+      - shared-product-access
+    paths:
+      - "Blueprint-Clean/frontend/**"
+      - ".github/workflows/deploy-mab-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mab-web-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Blueprint-Clean/frontend
+    steps:
+      - name: Check out production source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Blueprint-Clean/frontend/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build and verify production export
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://mab-path-editor.onrender.com
+        run: npm run release:web
+
+      - name: Publish verified export
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: Blueprint-Clean/frontend/dist
+          commit_message: Deploy verified MAB web ${{ github.sha }}
+

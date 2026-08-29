@@ -35,11 +35,14 @@ jobs:
 
           auth = Path("Blueprint-Clean/backend/auth.py").read_text(encoding="utf-8")
           profile = Path("Blueprint-Clean/frontend/app/profile.tsx").read_text(encoding="utf-8")
+          api_config = Path("Blueprint-Clean/frontend/config/api.ts").read_text(encoding="utf-8")
           tests = Path("Blueprint-Clean/backend/tests/conftest.py").read_text(encoding="utf-8")
 
           forbidden = {
               "development JWT fallback": "your-secret-key" in auth,
               "checkout token logging": 'console.log("TOKEN:"' in profile,
+              "localhost production API fallback": "127.0.0.1:8000" in api_config or "localhost:8000" in api_config,
+              "missing production API fallback": "https://mab-path-editor.onrender.com" not in api_config,
               "missing Render test guard": '.onrender.com' not in tests,
               "missing destructive-test opt-in": "ALLOW_DESTRUCTIVE_INTEGRATION_TESTS" not in tests,
           }
