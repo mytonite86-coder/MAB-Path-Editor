@@ -129,7 +129,63 @@ function codeBeforeComment(line: string): string {
 }
 
 function executableCode(line: string): string {
-  return codeBeforeComment(line).replace(/\([^)]*\)/g, ' ');
+  let depth = 0;
+  let tail = false;
+  return [...line].map(character => {
+    if (character === ';' && depth === 0) tail = true;
+    if (tail) return ' ';
+    if (character === '(') { depth += 1; return ' '; }
+    if (character === ')' && depth > 0) { depth -= 1; return ' '; }
+    return depth > 0 ? ' ' : character;
+  }).join('');
+}
+
+type EditableWord = 'G' | 'X' | 'Y' | 'I' | 'J';
+
+export function readSourceLineValues(line: string): Partial<Record<EditableWord, string>> {
+  const values: Partial<Record<EditableWord, string>> = {};
+  for (const match of executableCode(line).matchAll(/([GXYIJ])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi)) {
+    const letter = match[1].toUpperCase() as EditableWord;
+    if (letter !== 'G' || [0, 1, 2, 3].includes(Number(match[2]))) values[letter] = match[2];
+  }
+  return values;
+}
+
+/** Patch only explicit words on the selected physical record, never a prior move. */
+export function patchSourceLine(line: string, edits: Partial<Record<EditableWord, string>>): string {
+  let result = line;
+  for (const [letter, value] of Object.entries(edits)) {
+    if (!value?.trim()) continue;
+    const next = value.trim();
+    if (readSourceLineValues(result)[letter as EditableWord] === next) continue;
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(next) || !Number.isFinite(Number(next))) {
+      throw new Error(`${letter} must be a finite signed number.`);
+    }
+    const matches = [...executableCode(result).matchAll(new RegExp(`(${letter}\\s*)([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))`, 'gi'))];
+    if (matches.length !== 1) throw new Error(`${letter} must occur exactly once on this source line. Select its own line to edit it.`);
+    const match = matches[0];
+    if (letter === 'G' && (![0, 1, 2, 3].includes(Number(next)) || ![0, 1, 2, 3].includes(Number(match[2])))) {
+      throw new Error('Only an existing G0–G3 motion word can be edited here.');
+    }
+    const start = match.index! + match[1].length;
+    result = result.slice(0, start) + next + result.slice(start + match[2].length);
+  }
+  return result;
+}
+
+export function coordinateDescription(lines: string[], selectedLine: number): string {
+  let units = 'units undeclared';
+  let distance = 'G90 assumed by preview';
+  for (const line of lines.slice(0, selectedLine + 1)) {
+    for (const match of executableCode(line).matchAll(/G\s*(\d+(?:\.\d+)?)/gi)) {
+      const g = Number(match[1]);
+      if (g === 20) units = 'inches (G20)';
+      if (g === 21) units = 'mm (G21)';
+      if (g === 90) distance = 'absolute endpoints (G90)';
+      if (g === 91) distance = 'incremental endpoints (G91)';
+    }
+  }
+  return `${units}; ${distance}`;
 }
 
 export function interpretToolpath(lines: string[]): InterpretedPoint[] {

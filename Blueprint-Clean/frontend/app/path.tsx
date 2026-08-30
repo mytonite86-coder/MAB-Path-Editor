@@ -21,11 +21,13 @@ import {
   importControllerDocument,
   encodeTextDocument,
   interpretToolpath,
-  patchMotionBlock,
-  readMotionBlockValues,
+  patchSourceLine,
+  readSourceLineValues,
+  coordinateDescription,
   serializeTextDocument,
   type TextDocument,
 } from '../utils/gcodeDocument';
+import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
@@ -52,13 +54,14 @@ const isSyncingScroll = useRef(false);
  const { user, isGuest, isPro } = useAuth();
   const router = useRouter();
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
- const [insertLineText, setInsertLineText] = useState('G1 X0 Y0');
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [lineEndings, setLineEndings] = useState<string[]>([]);
 const [hasUtf8Bom, setHasUtf8Bom] = useState(false);
 const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
 const [importError, setImportError] = useState('');
+const [editError, setEditError] = useState('');
+const [previewWidth, setPreviewWidth] = useState(320);
 
 const currentDocument = (): TextDocument => ({
   lines: fileContent,
@@ -81,7 +84,8 @@ const [scrollLocked, setScrollLocked] = useState(false);
 const [showLineIds, setShowLineIds] = useState(false);
 
 const selectSourceLine = (line: number) => {
-  const values = readMotionBlockValues(fileContent, line);
+  const values = readSourceLineValues(fileContent[line] ?? '');
+  setEditError('');
   setSelectedLine(line);
   setEditG(values.G ?? '');
   setEditX(values.X ?? '');
@@ -94,46 +98,14 @@ const selectSourceLine = (line: number) => {
   });
 };
 
-let selectedText = '';
-
-if (selectedLine !== null) {
-  let start = selectedLine;
-
-  while (start > 0 && !fileContent[start].match(/^G0?[0123]/)) {
-    start--;
-  }
-
-  selectedText = fileContent[start] || '';
-
-  for (let i = start + 1; i < fileContent.length; i++) {
-    const next = fileContent[i] || '';
-
-    if (next.match(/^G0?[0123]/)) break
-
-    selectedText += ' ' + next;
-  }
-}
-
 const toolpath: ToolpathPoint[] = interpretToolpath(fileContent);
-const parsedCoords = selectedLine === null
-  ? null
-  : [...toolpath]
-      .reverse()
-      .find(point => point.line !== undefined && point.line <= selectedLine) ?? { x: 0, y: 0 };
-  const cleanPoints = toolpath.filter(p => !Number.isNaN(p.x) && !Number.isNaN(p.y));
-  
-const xs = cleanPoints.map(p => p.x);
-const ys = cleanPoints.map(p => p.y);
-
-const minX = Math.min(...xs);
-const maxX = Math.max(...xs);
-const minY = Math.min(...ys);
-const maxY = Math.max(...ys);
-
-const width = maxX - minX || 1;
-const height = maxY - minY || 1;
-
-const scale = Math.min(200 / width, 200 / height);
+const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
+const origin = preview.project({ x: 0, y: 0 });
+const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
+const movementLines = [...new Set(toolpath.filter(point => point.commandEnd && point.line !== undefined).map(point => point.line!))];
+const previousMove = movementLines.filter(line => line < (selectedLine ?? 0)).pop();
+const nextMove = movementLines.find(line => line > (selectedLine ?? -1));
+const signed = (value: number) => `${value > 0 ? '+' : ''}${Number(value.toFixed(4))}`;
 
 
 return (
@@ -174,6 +146,8 @@ return (
     setHasUtf8Bom(document.hasUtf8Bom);
     setHistory([]);
     setSelectedLine(null);
+    setZoom(1); setPanX(0); setPanY(0);
+    setEditX(''); setEditY(''); setEditG(''); setEditI(''); setEditJ(''); setEditError('');
   } catch (error) {
     setImportError(error instanceof Error ? error.message : 'Could not read this file. The current document and source are unchanged.');
   }
@@ -275,7 +249,11 @@ return (
   </TouchableOpacity>
 
   <Text style={styles.panelText}>Zoom: {zoom}x</Text>
+  <TouchableOpacity accessibilityRole="button" style={{ padding: 12, backgroundColor: '#333', borderRadius: 8 }} onPress={() => { setZoom(1); setPanX(0); setPanY(0); }}>
+    <Text style={styles.panelText}>Fit drawing</Text>
+  </TouchableOpacity>
 </View>
+<Text style={styles.panelText}>X {signed(preview.minX)} to {signed(preview.maxX)} | Y {signed(preview.minY)} to {signed(preview.maxY)} · +X right, +Y up</Text>
 <ScrollView
   ref={previewScrollRef}
   scrollEnabled={true}
@@ -296,7 +274,9 @@ return (
     isSyncingScroll.current = false;
   }}
   scrollEventThrottle={16}
-  style={{ height: 200, maxHeight: 200, backgroundColor: '#111', overflow: 'hidden' }}
+  onLayout={event => setPreviewWidth(event.nativeEvent.layout.width)}
+  style={{ height: 240, maxHeight: 240, backgroundColor: '#111', overflow: 'hidden' }}
+  contentContainerStyle={{ height: 240 }}
   onStartShouldSetResponder={() => false}
   onResponderGrant={(e) => {
     setIsDragging(true);
@@ -317,28 +297,24 @@ return (
   }}
   onResponderRelease={() => setIsDragging(false)}
 >
+   <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: origin.y, width: previewWidth, borderTopWidth: 1, borderColor: '#555' }} />
+   <View pointerEvents="none" style={{ position: 'absolute', left: origin.x, top: 0, height: 240, borderLeftWidth: 1, borderColor: '#555' }} />
+   <Text pointerEvents="none" style={{ position: 'absolute', left: origin.x + 4, top: origin.y + 4, color: '#aaa', fontSize: 10 }}>0,0</Text>
    {toolpath.map((point, i) => {
   if (i === 0) return null;
 
   const prev = toolpath[i - 1];
   if (
-  Number.isNaN(point.x) ||
-  Number.isNaN(point.y) ||
-  Number.isNaN(prev.x) ||
-  Number.isNaN(prev.y)
+  !Number.isFinite(point.x) ||
+  !Number.isFinite(point.y) ||
+  !Number.isFinite(prev.x) ||
+  !Number.isFinite(prev.y)
 ) {
   return null;
 }
 
-  // 🔹 SCALE DOWN (key change)
-  const scale = 6 * zoom;
-
-  const x1 = (prev.x - minX) * scale;
-  const y1 = (prev.y - minY) * scale;
-
-
-const x2 = (point.x - minX) * scale;
-const y2 = (point.y - minY) * scale;
+  const { x: x1, y: y1 } = preview.project(prev);
+  const { x: x2, y: y2 } = preview.project(point);
 
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -361,18 +337,16 @@ const y2 = (point.y - minY) * scale;
       onPress={() => point.line !== undefined && selectSourceLine(point.line)}
       style={{
         position: 'absolute',
-        left: x1 + (200 - width * scale) / 2 + panX,
-        top: y1 + (200 - height * scale) / 2 + panY - 6,
+        left: x1,
+        top: y1 - 7,
         width: length,
         height: 14,
-        borderTopColor: isSelected ? '#FFD60A' : color,
-        borderTopWidth: isSelected ? 4 : 2,
-        borderStyle: point.mode === 'G00' ? 'dashed' : 'solid',
-        paddingVertical: 6,
         transform: [{ rotate: `${angle}deg` }],
         transformOrigin: 'left center',
       }}
-    />
+    >
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 4 : 2, borderStyle: point.mode === 'G00' ? 'dashed' : 'solid' }} />
+    </TouchableOpacity>
     {point.pierce && (
       <TouchableOpacity
         accessibilityRole="button"
@@ -381,8 +355,8 @@ const y2 = (point.y - minY) * scale;
         style={[
           styles.pierceMarker,
           {
-            left: x1 + (200 - width * scale) / 2 + panX - 5,
-            top: y1 + (200 - height * scale) / 2 + panY - 5,
+            left: x1 - 5,
+            top: y1 - 5,
           },
         ]}
       />
@@ -395,8 +369,8 @@ const y2 = (point.y - minY) * scale;
         style={[
           styles.lineIdBadge,
           {
-            left: x2 + (200 - width * scale) / 2 + panX + 4,
-            top: y2 + (200 - height * scale) / 2 + panY - 9,
+            left: x2 + 4,
+            top: y2 - 9,
           },
           isSelected && styles.lineIdBadgeSelected,
         ]}
@@ -421,7 +395,6 @@ const y2 = (point.y - minY) * scale;
   </Text>
 
   <ScrollView
-  ref={codeScrollRef}
   scrollEnabled={true}
   nestedScrollEnabled={true}
   onStartShouldSetResponder={() => true}
@@ -435,11 +408,18 @@ const y2 = (point.y - minY) * scale;
     </Text>
   </ScrollView>
 
-  <Text style={styles.panelText}>
-    X: {parsedCoords ? parsedCoords.x : '-'}
-    Y: {parsedCoords ? parsedCoords.y : '-'}
-  </Text>
+  <Text style={styles.panelText}>{coordinateDescription(fileContent, selectedLine ?? fileContent.length - 1)}</Text>
+  <Text style={styles.inspectNotice}>Preview coordinates, not verified machine position. Origin/undeclared modes follow preview defaults. Edit fields below are literal values on this source line.</Text>
+  {measured ? <Text style={styles.panelText}>
+    Start X {signed(measured.start.x)}  Y {signed(measured.start.y)}{'\n'}
+    End X {signed(measured.end.x)}  Y {signed(measured.end.y)}{'\n'}
+    ΔX {signed(measured.dx)}  ΔY {signed(measured.dy)}{'\n'}
+    Endpoint distance {Number(measured.endpointDistance.toFixed(4))}{measured.mode === 'G02' || measured.mode === 'G03' ? ' (chord, not arc length)' : ''}
+  </Text> : <Text style={styles.panelText}>No preview movement on the selected source line.</Text>}
+  <TouchableOpacity accessibilityRole="button" disabled={previousMove === undefined} onPress={() => previousMove !== undefined && selectSourceLine(previousMove)}><Text style={styles.panelText}>Previous move</Text></TouchableOpacity>
+  <TouchableOpacity accessibilityRole="button" disabled={nextMove === undefined} onPress={() => nextMove !== undefined && selectSourceLine(nextMove)}><Text style={styles.panelText}>Next move</Text></TouchableOpacity>
 </View>
+{editError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{editError}</Text>}
   
 
 <Text style={styles.panelText}>
@@ -447,6 +427,7 @@ const y2 = (point.y - minY) * scale;
   <TextInput
     style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
     value={editX}
+    accessibilityLabel="Source X"
     onChangeText={setEditX}
   />
 </Text>
@@ -456,6 +437,7 @@ const y2 = (point.y - minY) * scale;
   <TextInput
     style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
     value={editY}
+    accessibilityLabel="Source Y"
     onChangeText={setEditY}
   />
 </Text>
@@ -465,6 +447,7 @@ const y2 = (point.y - minY) * scale;
   <TextInput
     style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
     value={editG}
+    accessibilityLabel="Source G motion"
     onChangeText={setEditG}
   />
 </Text>
@@ -474,6 +457,7 @@ const y2 = (point.y - minY) * scale;
   <TextInput
     style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
     value={editI}
+    accessibilityLabel="Source I"
     onChangeText={setEditI}
   />
 </Text>
@@ -483,6 +467,7 @@ const y2 = (point.y - minY) * scale;
   <TextInput
     style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
     value={editJ}
+    accessibilityLabel="Source J"
     onChangeText={setEditJ}
   />
 </Text>
@@ -540,13 +525,20 @@ if (isGuest || !user || !isPro) {
     if (selectedLine === null) return;
 
     const before = currentDocument();
-    const updated = patchMotionBlock(fileContent, selectedLine, {
+    const updated = [...fileContent];
+    try {
+    updated[selectedLine] = patchSourceLine(fileContent[selectedLine], {
       X: editX,
       Y: editY,
       G: editG,
       I: editI,
       J: editJ,
     });
+    setEditError('');
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Edit could not be validated.');
+      return;
+    }
 
     if (updated.every((line, index) => line === fileContent[index])) return;
 
@@ -571,6 +563,11 @@ if (isGuest || !user || !isPro) {
     setLineEndings(last.endings);
     setHasUtf8Bom(last.hasUtf8Bom);
     setHistory(history.slice(0, -1));
+    if (selectedLine !== null) {
+      const values = readSourceLineValues(last.lines[selectedLine] ?? '');
+      setEditX(values.X ?? ''); setEditY(values.Y ?? ''); setEditG(values.G ?? ''); setEditI(values.I ?? ''); setEditJ(values.J ?? '');
+    }
+    setEditError('');
   }}
 >
   <Text style={styles.primaryText}>Undo</Text>
@@ -700,7 +697,7 @@ secondaryButton: {
     marginBottom: 8,
   },
   panelText: {
-    color: '#777',
+    color: '#D1D1D6',
     fontSize: 15,
   },
   previewHeader: {

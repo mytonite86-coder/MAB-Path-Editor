@@ -1,0 +1,6 @@
+(Synthetic negative-axis navigation test; not for machine execution)
+G20 G90
+G00 X-100 Y-200
+G01 X-500 Y-1000
+X50 Y-20
+M30
