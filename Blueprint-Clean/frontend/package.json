@@ -13,7 +13,7 @@
     "verify:web:production": "node scripts/verify-production-export.mjs",
     "release:web": "npm run build:web:production && npm run verify:web:production",
     "lint": "expo lint",
-    "test:gcode": "node --test tests/gcodeDocument.test.ts tests/textImport.test.ts tests/coordinates.test.ts"
+    "test:gcode": "node --test tests/gcodeDocument.test.ts tests/textImport.test.ts tests/coordinates.test.ts tests/motionInsertion.test.ts"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",
