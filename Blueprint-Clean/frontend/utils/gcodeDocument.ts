@@ -258,7 +258,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       let sweep = endAngle - startAngle;
       if (movementMode === 'G02' && sweep > 0) sweep -= Math.PI * 2;
       if (movementMode === 'G03' && sweep < 0) sweep += Math.PI * 2;
-      const steps = Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8));
+      const steps = Math.min(2048, Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8)));
 
       for (let step = 1; step <= steps; step += 1) {
         const angle = startAngle + (sweep * step) / steps;

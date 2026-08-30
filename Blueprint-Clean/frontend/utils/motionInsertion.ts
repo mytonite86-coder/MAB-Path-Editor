@@ -27,6 +27,9 @@ export function buildMotionInsertion(
   ending = '\n',
 ): InsertionResult {
   if (context.plane !== 'XY') throw new Error('Only the XY plane is supported by the S1 editor.');
+  if (!['mm', 'inch'].includes(context.units) || !['absolute', 'incremental'].includes(context.distance) || !['absolute', 'incremental'].includes(context.arcCenter)) throw new Error('Explicit supported units and coordinate modes are required.');
+  if (!['line', 'rapid', 'arc-cw', 'arc-ccw', 'lead-in', 'lead-out'].includes(kind)) throw new Error('Unsupported insertion type.');
+  if (!['\n', '\r', '\r\n'].includes(ending)) throw new Error('Unsupported line ending.');
   if (!finite(values.endX) || !finite(values.endY)) throw new Error('A finite signed endpoint is required.');
   if (!finite(context.start.x) || !finite(context.start.y)) throw new Error('The current start point is invalid.');
   const code = kind === 'rapid' ? 'G00' : kind === 'arc-cw' ? 'G02' : kind === 'arc-ccw' ? 'G03' : 'G01';
@@ -36,12 +39,22 @@ export function buildMotionInsertion(
   if ((kind === 'arc-cw' || kind === 'arc-ccw') && (!finite(values.centerX) || !finite(values.centerY))) {
     throw new Error('Arc insertion requires finite I/J center values.');
   }
+  if (values.endX === context.start.x && values.endY === context.start.y) throw new Error('Zero-length moves and full-circle insertion are not supported.');
+  if (kind === 'arc-cw' || kind === 'arc-ccw') {
+    const r1 = Math.hypot(context.start.x - values.centerX!, context.start.y - values.centerY!);
+    const r2 = Math.hypot(values.endX - values.centerX!, values.endY - values.centerY!);
+    if (!Number.isFinite(r1) || !Number.isFinite(r2) || r1 === 0 || Math.abs(r1 - r2) > Math.max(1e-9, r1 * 1e-10)) throw new Error('Arc start and endpoint must lie on the same nonzero-radius circle.');
+  }
+  const numberWord = (value: number) => {
+    if (!Number.isFinite(value) || Math.abs(value) > 1e12 || (value !== 0 && Math.abs(value) < 1e-6)) throw new Error('Coordinate exceeds the supported plain-decimal range; no rounding was applied.');
+    return String(Object.is(value, -0) ? 0 : value);
+  };
   const coordinate = (axis: 'X' | 'Y', absolute: number, start: number) =>
-    `${axis}${(context.distance === 'incremental' ? absolute - start : absolute).toFixed(4).replace(/\.?0+$/, '')}`;
+    `${axis}${numberWord(context.distance === 'incremental' ? absolute - start : absolute)}`;
   const fields = [code, coordinate('X', values.endX, context.start.x), coordinate('Y', values.endY, context.start.y)];
   if (kind === 'arc-cw' || kind === 'arc-ccw') {
     const center = (axis: 'I' | 'J', value: number, start: number) =>
-      `${axis}${(context.arcCenter === 'incremental' ? value - start : value).toFixed(4).replace(/\.?0+$/, '')}`;
+      `${axis}${numberWord(context.arcCenter === 'incremental' ? value - start : value)}`;
     fields.push(center('I', values.centerX!, context.start.x), center('J', values.centerY!, context.start.y));
   }
   return { lines: [fields.join(' ') + ending] };

@@ -28,6 +28,8 @@ import {
   type TextDocument,
 } from '../utils/gcodeDocument';
 import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
+import InsertMotionDialog from '../components/InsertMotionDialog';
+import ProgramSettings from '../components/ProgramSettings';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
@@ -61,6 +63,7 @@ const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
 const [importError, setImportError] = useState('');
 const [editError, setEditError] = useState('');
+const [insertionAfter, setInsertionAfter] = useState<number | null>(null);
 const [previewWidth, setPreviewWidth] = useState(320);
 
 const currentDocument = (): TextDocument => ({
@@ -420,6 +423,7 @@ return (
   <TouchableOpacity accessibilityRole="button" disabled={nextMove === undefined} onPress={() => nextMove !== undefined && selectSourceLine(nextMove)}><Text style={styles.panelText}>Next move</Text></TouchableOpacity>
 </View>
 {editError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{editError}</Text>}
+<ProgramSettings lines={fileContent} onSelect={selectSourceLine} />
   
 
 <Text style={styles.panelText}>
@@ -582,47 +586,19 @@ if (isGuest || !user || !isPro) {
   );
   return;
 }
-    const newLines = [...fileContent];
-
-    const insertAt =
-      selectedLine === null
-        ? newLines.length
-        : selectedLine + 1;
-
-   const newEndings = [...lineEndings];
-   const preferredEnding = lineEndings.find(ending => ending !== '') || '\n';
-   const insertedLines = [
-     'G03',
-     'X0',
-     'Y0',
-     'I0',
-     'J0'
-   ];
-
-   newLines.splice(
-  insertAt,
-  0,
-  ...insertedLines
-);
-
-    if (insertAt === fileContent.length && fileContent.length > 0 && newEndings[fileContent.length - 1] === '') {
-      newEndings[fileContent.length - 1] = preferredEnding;
-    }
-    const insertedEndings = insertedLines.map((_, index) =>
-      insertAt === fileContent.length && index === insertedLines.length - 1
-        ? ''
-        : preferredEnding
-    );
-    newEndings.splice(insertAt, 0, ...insertedEndings);
-
-    setHistory([...history, currentDocument()]);
-    setFileContent(newLines);
-    setLineEndings(newEndings);
-    selectSourceLine(insertAt);
+    if (selectedLine === null) { setEditError('Select a source line before adding a movement.'); return; }
+    setInsertionAfter(selectedLine);
   }}
 >
   <Text style={styles.primaryText}>Add Line</Text>
 </TouchableOpacity>
+{insertionAfter !== null && <InsertMotionDialog document={currentDocument()} after={insertionAfter} onCancel={() => setInsertionAfter(null)} onApply={next => {
+  if (isGuest || !user) { setInsertionAfter(null); return; }
+  setHistory([...history, currentDocument()]);
+  setFileContent(next.lines); setLineEndings(next.endings); setHasUtf8Bom(next.hasUtf8Bom);
+  // Keep selection on the original line so both Apply and Undo retain the same source scope.
+  setInsertionAfter(null); setEditError('');
+}} />}
 <TouchableOpacity
   style={styles.primaryButton}
   onPress={async () => {
