@@ -6,7 +6,7 @@ import { interpretToolpath, type TextDocument } from '../utils/gcodeDocument';
 import { fitPreview } from '../utils/previewGeometry';
 import type { InsertionKind } from '../utils/motionInsertion';
 
-const choices: [InsertionKind, string][] = [['line', 'Straight line'], ['arc-cw', 'Arc clockwise'], ['arc-ccw', 'Arc counterclockwise'], ['rapid', 'Rapid movement'], ['lead-in', 'Lead-in'], ['lead-out', 'Lead-out']];
+const choices: [InsertionKind, string][] = [['line', 'Straight line'], ['arc-cw', 'Curve / arc clockwise'], ['arc-ccw', 'Curve / arc counterclockwise'], ['rapid', 'Rapid movement'], ['pierce', 'Pierce — planned / unsupported'], ['lead-in', 'Lead-in'], ['lead-out', 'Lead-out']];
 const message = (error: unknown) => error instanceof Error ? error.message : 'Insertion could not be validated.';
 
 export default function InsertMotionDialog({ document, after, onCancel, onApply }: {
@@ -20,7 +20,7 @@ export default function InsertMotionDialog({ document, after, onCancel, onApply 
   let gate = '';
   try { inspection = inspectInsertion(document, after); } catch (e) { gate = message(e); }
   const arc = kind === 'arc-cw' || kind === 'arc-ccw';
-  const lead = kind === 'lead-in' || kind === 'lead-out';
+  const lead = kind === 'lead-in' || kind === 'lead-out' || kind === 'pierce';
   const numberField = (key: keyof typeof fields) => {
     const value = fields[key].trim();
     if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value) || !Number.isFinite(Number(value))) throw new Error(`${key} requires a finite signed decimal.`);
@@ -46,7 +46,7 @@ export default function InsertMotionDialog({ document, after, onCancel, onApply 
       {inspection && <Text style={s.text}>Start X {inspection.context.start.x}, Y {inspection.context.start.y}; {inspection.context.units}; {inspection.context.distance} endpoints; {inspection.context.arcCenter} arc centers; XY plane; G54 work coordinates; feed {inspection.feed} {inspection.context.units}/min; M5 declared.</Text>}
       {gate !== '' && <Text accessibilityRole="alert" style={s.warning}>{gate}</Text>}
       {choices.map(([value, label]) => <TouchableOpacity key={value} accessibilityRole="radio" accessibilityState={{ checked: kind === value }} style={s.button} onPress={() => { setKind(value); setReview(null); setError(''); }}><Text style={s.text}>{kind === value ? '● ' : '○ '}{label}</Text></TouchableOpacity>)}
-      {lead ? <Text style={s.warning}>Lead-in/out require a verified contour and controller process profile. No torch, pierce or compensation commands will be invented.</Text> : <>
+      {lead ? <Text accessibilityRole="alert" style={s.warning}>Unsupported until a verified controller profile is available.</Text> : <>
         <Text style={s.text}>Enter endpoint{arc ? ' and center' : ''} as absolute coordinates in the displayed work frame. The generated words use the program’s declared modes. Feed is inherited; process remains off.</Text>
         {(['endX', 'endY', ...(arc ? ['centerX', 'centerY'] : [])] as (keyof typeof fields)[]).map(key => <View key={key}>
           <Text style={s.text}>{labels[key]}</Text><TextInput accessibilityLabel={`Insert ${key}`} style={s.input} value={fields[key]} onChangeText={value => { setFields({ ...fields, [key]: value }); setReview(null); setError(''); }} />
@@ -56,6 +56,7 @@ export default function InsertMotionDialog({ document, after, onCancel, onApply 
       {error !== '' && <Text accessibilityRole="alert" style={s.warning}>{error}</Text>}
       {currentReview && review && <>
         <Text style={s.text}>{review.plan.generated}</Text>
+        <Text style={s.text}>Start X {review.plan.context.start.x} Y {review.plan.context.start.y}; end X {fields.endX} Y {fields.endY}. Start is the selected boundary; edit the preceding endpoint to change it.</Text>
         <Text style={s.text}>Blue: candidate. Dot: start. Orange dashed: changed connecting rapid. +X right, +Y up.</Text>
         <Svg width={280} height={180} accessibilityLabel="Candidate movement preview">
           <Polyline points={points.map(point => { const p = fit.project(point); return `${p.x},${p.y}`; }).join(' ')} stroke="#35D0E5" strokeWidth={2} fill="none" />

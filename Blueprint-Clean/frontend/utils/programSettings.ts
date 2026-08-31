@@ -42,5 +42,14 @@ export function inspectProgramSettings(lines: readonly string[]) {
     if (unknownG) unresolved.push({ line: lineNumber, raw: line, description: 'Unsupported G instruction; subsequent settings scope is unresolved.' });
     if (tokens.some(m => m[1].toUpperCase() === 'M' && [2, 30].includes(Number(m[2])))) { units = undefined; mode = undefined; }
   });
-  return { feed, unresolved, amperage: 'Not found in supported syntax. May be supplied by an external process table or controller.', overburn: 'Not found in supported syntax. Dwell and generic commands are not treated as overburn.', references: 'No verified process/cut-chart reference parser. Raw tokens below are evidence for review, not confirmed process settings.' };
+  const unsupported = 'Unsupported until a verified controller profile is available. Presence/value cannot be determined from generic tokens; not evidence of absence.';
+  return { feed, unresolved,
+    amperage: unsupported,
+    nozzle: unsupported,
+    heightControl: unsupported,
+    pierce: unsupported,
+    rapidSpeed: 'No supported programmed rapid-speed mapping. F words are not assumed to control rapid speed.',
+    overburn: `${unsupported} Dwell and generic commands are not treated as overburn.`,
+    references: 'No verified process/cut-chart reference parser. Raw tokens below are evidence for review, not confirmed process settings.',
+  };
 }

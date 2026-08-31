@@ -14,8 +14,13 @@ export default function ProgramSettings({ lines, onSelect }: { lines: string[]; 
       {!evidence.feed.length && <Text style={text}>No explicit feed found in supported syntax.</Text>}
       {evidence.feed.map((entry, i) => <TouchableOpacity key={`f${i}`} accessibilityRole="button" onPress={() => onSelect(entry.line - 1)}><Text style={text}>Line {entry.line}: {entry.raw} — {entry.description}</Text></TouchableOpacity>)}
       <Text style={text}>Torch amperage: {evidence.amperage}</Text>
-      <Text style={text}>Overburn / overcut: {evidence.overburn}</Text>
+      <Text style={text}>Tip / nozzle: {evidence.nozzle}</Text>
+      <Text style={text}>Travel / rapid speed: {evidence.rapidSpeed}</Text>
+      <Text style={text}>Overburn: {evidence.overburn}</Text>
+      <Text style={text}>Height control: {evidence.heightControl}</Text>
+      <Text style={text}>Pierce settings: {evidence.pierce}</Text>
       <Text style={text}>Process / cut chart: {evidence.references}</Text>
+      <Text style={text}>Other programmed tool/process tokens — raw evidence, unsupported interpretation</Text>
       {evidence.unresolved.map((entry, i) => <TouchableOpacity key={`u${i}`} accessibilityRole="button" onPress={() => onSelect(entry.line - 1)}><Text style={text}>Line {entry.line}: {entry.raw} — {entry.description}</Text></TouchableOpacity>)}
     </ScrollView>}
   </View>;

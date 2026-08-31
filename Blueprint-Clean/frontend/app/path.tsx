@@ -21,7 +21,6 @@ import {
   importControllerDocument,
   encodeTextDocument,
   interpretToolpath,
-  patchSourceLine,
   readSourceLineValues,
   coordinateDescription,
   serializeTextDocument,
@@ -30,6 +29,7 @@ import {
 import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
 import InsertMotionDialog from '../components/InsertMotionDialog';
 import ProgramSettings from '../components/ProgramSettings';
+import { reviewMeasurementEdit } from '../utils/measurementEdit';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
@@ -109,6 +109,12 @@ const movementLines = [...new Set(toolpath.filter(point => point.commandEnd && p
 const previousMove = movementLines.filter(line => line < (selectedLine ?? 0)).pop();
 const nextMove = movementLines.find(line => line > (selectedLine ?? -1));
 const signed = (value: number) => `${value > 0 ? '+' : ''}${Number(value.toFixed(4))}`;
+let measurementDraft: ReturnType<typeof reviewMeasurementEdit> | undefined;
+let measurementDraftError = '';
+if (selectedLine !== null) {
+  try { measurementDraft = reviewMeasurementEdit(fileContent, selectedLine, { X: editX, Y: editY, G: editG, I: editI, J: editJ }); }
+  catch (error) { measurementDraftError = error instanceof Error ? error.message : 'Measurements unavailable.'; }
+}
 
 
 return (
@@ -424,6 +430,15 @@ return (
 </View>
 {editError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{editError}</Text>}
 <ProgramSettings lines={fileContent} onSelect={selectSourceLine} />
+<Text style={styles.panelText}>Edit line measurements — X/Y are source endpoint words (increments in G91); I/J are source arc-center words. Use your normal device input. Review the numerical result below before Apply.</Text>
+{measurementDraft && <Text accessibilityLabel="Draft line measurements" style={styles.panelText}>
+  Draft start X {measurementDraft.start.x} Y {measurementDraft.start.y}{'\n'}
+  Draft end X {measurementDraft.end.x} Y {measurementDraft.end.y}{'\n'}
+  Draft ΔX {measurementDraft.dx} ΔY {measurementDraft.dy}{'\n'}
+  Source after Apply: {measurementDraft.source}{'\n'}
+  Uses the displayed coordinate modes and preview assumptions, not verified machine position. Following movement may start at this new endpoint.
+</Text>}
+{measurementDraftError !== '' && <Text accessibilityRole="alert" style={styles.panelText}>{measurementDraftError}</Text>}
   
 
 <Text style={styles.panelText}>
@@ -531,13 +546,13 @@ if (isGuest || !user || !isPro) {
     const before = currentDocument();
     const updated = [...fileContent];
     try {
-    updated[selectedLine] = patchSourceLine(fileContent[selectedLine], {
+    updated[selectedLine] = reviewMeasurementEdit(fileContent, selectedLine, {
       X: editX,
       Y: editY,
       G: editG,
       I: editI,
       J: editJ,
-    });
+    }).source;
     setEditError('');
     } catch (error) {
       setEditError(error instanceof Error ? error.message : 'Edit could not be validated.');

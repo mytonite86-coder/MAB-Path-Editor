@@ -1,4 +1,4 @@
-export type InsertionKind = 'line' | 'arc-cw' | 'arc-ccw' | 'rapid' | 'lead-in' | 'lead-out';
+export type InsertionKind = 'line' | 'arc-cw' | 'arc-ccw' | 'rapid' | 'pierce' | 'lead-in' | 'lead-out';
 
 export type InsertionContext = {
   units: 'mm' | 'inch';
@@ -28,6 +28,7 @@ export function buildMotionInsertion(
 ): InsertionResult {
   if (context.plane !== 'XY') throw new Error('Only the XY plane is supported by the S1 editor.');
   if (!['mm', 'inch'].includes(context.units) || !['absolute', 'incremental'].includes(context.distance) || !['absolute', 'incremental'].includes(context.arcCenter)) throw new Error('Explicit supported units and coordinate modes are required.');
+  if (kind === 'pierce') throw new Error('Unsupported until a verified controller profile is available.');
   if (!['line', 'rapid', 'arc-cw', 'arc-ccw', 'lead-in', 'lead-out'].includes(kind)) throw new Error('Unsupported insertion type.');
   if (!['\n', '\r', '\r\n'].includes(ending)) throw new Error('Unsupported line ending.');
   if (!finite(values.endX) || !finite(values.endY)) throw new Error('A finite signed endpoint is required.');

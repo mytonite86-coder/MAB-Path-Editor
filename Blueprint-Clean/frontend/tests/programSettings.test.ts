@@ -11,7 +11,7 @@ test('feed inspector retains changes and evidence lines without mutation or comm
   assert.match(result.feed[1].description, /240 mm\/min/);
   assert.match(result.feed[2].description, /0.5 inch\/revolution/);
   assert.match(result.feed[3].description, /inverse minutes/);
-  assert.match(result.amperage, /Not found/);
+  assert.match(result.amperage, /Unsupported until a verified controller profile/);
   assert.match(result.references, /No verified/);
   assert.equal(JSON.stringify(lines), before);
 });
