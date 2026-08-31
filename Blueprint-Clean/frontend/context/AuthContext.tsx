@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases from 'react-native-purchases';
 import { Platform } from "react-native";
 import { API_URL } from '@/config/api';
+import { reconcileCheckoutReturn } from '../utils/checkoutReturn';
 
 interface User {
   id: string;
@@ -17,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   isGuest: boolean;
   isPro: boolean;
+  checkoutMessage: string;
   refreshUser: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
@@ -32,6 +34,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [isPro, setIsPro] = useState(false);
+  const [checkoutMessage, setCheckoutMessage] = useState('');
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || isLoading || typeof window === 'undefined') return;
+    const query = new URLSearchParams(window.location.search);
+    const returned = query.get('checkout');
+    if (returned !== 'success' && returned !== 'cancel') return;
+    let current = true;
+    setIsPro(false);
+    if (!token) { setCheckoutMessage('Sign in again to check your access. Demo restrictions remain.'); return; }
+    setCheckoutMessage('Checking your M.A.B. access…');
+    reconcileCheckoutReturn(API_URL, token, returned === 'success' ? query.get('session_id') : null)
+      .then(fresh => {
+        if (!current) return;
+        setUser(fresh);
+        setIsPro(fresh.is_premium === true);
+        window.sessionStorage.setItem('user', JSON.stringify(fresh));
+        setCheckoutMessage(fresh.is_premium ? 'Premium access confirmed. Copy and export are unlocked.' : 'No premium access confirmed. Demo restrictions remain. Reload after payment completes to check again.');
+      })
+      .catch(error => { if (current) setCheckoutMessage(error instanceof Error ? error.message : 'Access check failed. Demo restrictions remain.'); });
+    return () => { current = false; };
+  }, [token, isLoading]);
 
   useEffect(() => {
     // Load stored auth data on mount
@@ -216,6 +240,7 @@ if (Platform.OS === "web") {
         isLoading,
         isGuest,
         isPro,
+        checkoutMessage,
         refreshUser,
         login,
         register,

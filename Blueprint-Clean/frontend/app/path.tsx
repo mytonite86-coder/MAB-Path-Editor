@@ -53,7 +53,7 @@ export default function Path() {
   const codeScrollRef = useRef<ScrollView>(null);
 const previewScrollRef = useRef<ScrollView>(null);
 const isSyncingScroll = useRef(false);
- const { user, isGuest, isPro } = useAuth();
+ const { user, isGuest, isPro, checkoutMessage } = useAuth();
   const router = useRouter();
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
 const [fileContent, setFileContent] = useState<string[]>([]);
@@ -430,6 +430,7 @@ return (
 </View>
 {editError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{editError}</Text>}
 <ProgramSettings lines={fileContent} onSelect={selectSourceLine} />
+{checkoutMessage !== '' && <Text accessibilityRole="alert" style={styles.panelText}>{checkoutMessage}</Text>}
 <Text style={styles.panelText}>Edit line measurements — X/Y are source endpoint words (increments in G91); I/J are source arc-center words. Use your normal device input. Review the numerical result below before Apply.</Text>
 {measurementDraft && <Text accessibilityLabel="Draft line measurements" style={styles.panelText}>
   Draft start X {measurementDraft.start.x} Y {measurementDraft.start.y}{'\n'}
