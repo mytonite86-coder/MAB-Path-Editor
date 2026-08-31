@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 import pytest
 import stripe
@@ -26,6 +27,39 @@ def isolated_collections(monkeypatch):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_new_price_checkout_preserves_existing_records(isolated_collections, monkeypatch):
+    captured = {}
+    def create_session(**params):
+        captured.update(params)
+        return SimpleNamespace(id="cs_test_price_only", url="https://checkout.stripe.com/test")
+    monkeypatch.setattr(server, "configure_stripe", lambda: None)
+    monkeypatch.setattr(server.stripe.checkout.Session, "create", create_session)
+    old_user = {"_id": ObjectId(), "is_premium": True, "entitlements": ["founder_lifetime"]}
+    old_transaction = {"_id": ObjectId(), "session_id": "old_session", "amount": 7.99, "subscription_id": "existing_subscription"}
+    await isolated_collections.users.insert_one(old_user.copy())
+    await isolated_collections.payment_transactions.insert_one(old_transaction.copy())
+    await server.create_checkout_session(
+        CreateCheckoutSessionRequest(package_id="mab_s1_monthly", origin_url="https://mytonite86-coder.github.io/MAB-Path-Editor"),
+        request=None,
+        current_user={"user_id": str(ObjectId()), "email": "price-test@example.invalid"},
+    )
+    price = captured["line_items"][0]["price_data"]
+    assert captured["mode"] == "subscription"
+    assert price["unit_amount"] == 999
+    assert price["currency"] == "usd"
+    assert price["recurring"] == {"interval": "month", "interval_count": 1}
+    assert captured["metadata"]["product_id"] == "mab_s1"
+    assert captured["metadata"]["package_id"] == "mab_s1_monthly"
+    assert "/MAB-Path-Editor/path?" in captured["success_url"]
+    assert "checkout=success" in captured["success_url"]
+    assert server.PREMIUM_PACKAGES["pathseal_monthly"]["amount"] == 9.99
+    assert await isolated_collections.users.find_one({"_id": old_user["_id"]}) == old_user
+    assert await isolated_collections.payment_transactions.find_one({"_id": old_transaction["_id"]}) == old_transaction
+    new_transaction = await isolated_collections.payment_transactions.find_one({"session_id": "cs_test_price_only"})
+    assert new_transaction["amount"] == 9.99
 
 
 @pytest.mark.anyio
@@ -122,7 +156,7 @@ async def test_monthly_cancellation_preserves_permanent_access(
 
 
 @pytest.mark.anyio
-async def test_real_stripe_test_checkout_is_monthly_and_799(
+async def test_real_stripe_test_checkout_is_monthly_and_999(
     isolated_collections,
 ):
     test_key = os.environ.get("STRIPE_TEST_API_KEY", "")
@@ -150,7 +184,7 @@ async def test_real_stripe_test_checkout_is_monthly_and_799(
         )
         price = session.line_items.data[0].price
         assert session.mode == "subscription"
-        assert price.unit_amount == 799
+        assert price.unit_amount == 999
         assert price.currency == "usd"
         assert price.recurring.interval == "month"
 
@@ -159,7 +193,7 @@ async def test_real_stripe_test_checkout_is_monthly_and_799(
         )
         assert transaction["package_id"] == "mab_s1_monthly"
         assert transaction["billing_mode"] == "subscription"
-        assert transaction["amount"] == 7.99
+        assert transaction["amount"] == 9.99
     finally:
         server.STRIPE_API_KEY = monkeypatch_key
         if session is not None and session.status == "open":

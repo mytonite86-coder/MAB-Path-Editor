@@ -89,7 +89,7 @@ const handleSubscribe = async () => {
 />
 
       <Text style={styles.subtitle}>
-        Unlimited G-code editing, repair, copy, and export for $7.99 per month.
+        Unlimited G-code editing, repair, copy, and export for $9.99 per month.
       </Text>
 
 
@@ -105,7 +105,7 @@ const handleSubscribe = async () => {
         style={styles.button}
         onPress={handleSubscribe}
       >
-        <Text style={styles.buttonText}>Subscribe • $7.99/month</Text>
+        <Text style={styles.buttonText}>Subscribe • $9.99/month</Text>
       </TouchableOpacity>
 
  
