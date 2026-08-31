@@ -206,7 +206,7 @@ def build_checkout_return_urls(
                 base_url = (
                     f"{parsed.scheme}://{parsed.netloc}/MAB-Path-Editor"
                 )
-                return_target = f"{base_url}/profile"
+                return_target = f"{base_url}/path"
 
             elif product_id == "pathseal":
                 base_url = (
@@ -220,7 +220,7 @@ def build_checkout_return_urls(
             base_url = origin_url.rstrip("/")
 
             if product_id == "mab_s1":
-                return_target = f"{base_url}/profile"
+                return_target = f"{base_url}/path"
             else:
                 return_target = base_url
 

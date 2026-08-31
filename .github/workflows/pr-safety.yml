@@ -34,13 +34,18 @@ jobs:
           from pathlib import Path
 
           auth = Path("Blueprint-Clean/backend/auth.py").read_text(encoding="utf-8")
-          profile = Path("Blueprint-Clean/frontend/app/profile.tsx").read_text(encoding="utf-8")
+          checkout = "\n".join(Path(path).read_text(encoding="utf-8") for path in (
+              "Blueprint-Clean/frontend/app/upgrade.tsx",
+              "Blueprint-Clean/frontend/context/AuthContext.tsx",
+              "Blueprint-Clean/frontend/utils/checkoutReturn.ts",
+              "Blueprint-Clean/frontend/app/path.tsx",
+          ))
           api_config = Path("Blueprint-Clean/frontend/config/api.ts").read_text(encoding="utf-8")
           tests = Path("Blueprint-Clean/backend/tests/conftest.py").read_text(encoding="utf-8")
 
           forbidden = {
               "development JWT fallback": "your-secret-key" in auth,
-              "checkout token logging": 'console.log("TOKEN:"' in profile,
+              "checkout token logging": 'console.log("TOKEN:"' in checkout,
               "localhost production API fallback": "127.0.0.1:8000" in api_config or "localhost:8000" in api_config,
               "missing production API fallback": "https://mab-path-editor.onrender.com" not in api_config,
               "missing Render test guard": '.onrender.com' not in tests,
