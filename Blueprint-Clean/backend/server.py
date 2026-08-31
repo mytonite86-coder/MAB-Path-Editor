@@ -102,7 +102,7 @@ PREMIUM_PACKAGES = {
         "description": (
             "Unlock premium editing and export tools in M.A.B. S1."
         ),
-        "amount": 7.99,
+        "amount": 9.99,
         "currency": "usd",
         "billing_mode": "subscription",
         "interval": "month",
