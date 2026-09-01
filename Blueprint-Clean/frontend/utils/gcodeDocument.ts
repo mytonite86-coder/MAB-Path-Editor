@@ -11,7 +11,16 @@ export type InterpretedPoint = {
   mode?: 'G00' | 'G01' | 'G02' | 'G03';
   pierce?: boolean;
   commandEnd?: boolean;
+  role?: 'rapid' | 'cut';
+  geometry?: 'straight' | 'arc-cw' | 'arc-ccw';
 };
+
+export function motionSemantics(mode: InterpretedPoint['mode']): Pick<InterpretedPoint, 'role' | 'geometry'> {
+  if (mode === 'G00') return { role: 'rapid', geometry: 'straight' };
+  if (mode === 'G02') return { role: 'cut', geometry: 'arc-cw' };
+  if (mode === 'G03') return { role: 'cut', geometry: 'arc-ccw' };
+  return { role: 'cut', geometry: 'straight' };
+}
 
 const UTF8_BOM = new Uint8Array([0xef, 0xbb, 0xbf]);
 
@@ -234,6 +243,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
     };
 
     if (movementMode === 'G02' || movementMode === 'G03') {
+      const semantics = motionSemantics(movementMode);
       const isPierce = needsPierce;
       needsPierce = false;
       const hasCenter = values.has('I') || values.has('J');
@@ -248,7 +258,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       const radius = Math.hypot(current.x - center.x, current.y - center.y);
 
       if (!hasCenter || radius === 0) {
-        points.push({ ...end, line: lineIndex, mode: movementMode, pierce: isPierce, commandEnd: true });
+        points.push({ ...end, line: lineIndex, mode: movementMode, ...semantics, pierce: isPierce, commandEnd: true });
         current = end;
         continue;
       }
@@ -256,6 +266,10 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       const startAngle = Math.atan2(current.y - center.y, current.x - center.x);
       const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
       let sweep = endAngle - startAngle;
+      const fullCircle = Math.hypot(end.x - current.x, end.y - current.y) < 1e-9;
+      if (fullCircle && Math.abs(sweep) < 1e-12) {
+        sweep = movementMode === 'G02' ? -Math.PI * 2 : Math.PI * 2;
+      }
       if (movementMode === 'G02' && sweep > 0) sweep -= Math.PI * 2;
       if (movementMode === 'G03' && sweep < 0) sweep += Math.PI * 2;
       const steps = Math.min(2048, Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8)));
@@ -267,6 +281,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
           y: center.y + Math.sin(angle) * radius,
           line: lineIndex,
           mode: movementMode,
+          ...semantics,
           pierce: isPierce && step === 1,
           commandEnd: step === steps,
         });
@@ -278,7 +293,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
     const isPierce = movementMode === 'G01' && needsPierce;
     if (movementMode === 'G00') needsPierce = true;
     if (movementMode === 'G01') needsPierce = false;
-    points.push({ ...end, line: lineIndex, mode: movementMode, pierce: isPierce, commandEnd: true });
+    points.push({ ...end, line: lineIndex, mode: movementMode, ...motionSemantics(movementMode), pierce: isPierce, commandEnd: true });
     current = end;
   }
 

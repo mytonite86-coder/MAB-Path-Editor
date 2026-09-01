@@ -25,6 +25,7 @@ import {
   coordinateDescription,
   serializeTextDocument,
   type TextDocument,
+  type InterpretedPoint,
 } from '../utils/gcodeDocument';
 import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
 import InsertMotionDialog from '../components/InsertMotionDialog';
@@ -33,20 +34,11 @@ import { reviewMeasurementEdit } from '../utils/measurementEdit';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
-type ToolpathPoint = {
-  x: number;
-  y: number;
-  line?: number;
-  mode?: MovementMode;
-  pierce?: boolean;
-  commandEnd?: boolean;
-};
-
 const movementColor: Record<MovementMode, string> = {
   G00: '#FF9F0A',
   G01: '#35D0E5',
-  G02: '#64D2FF',
-  G03: '#5E5CE6',
+  G02: '#35D0E5',
+  G03: '#35D0E5',
 };
 
 export default function Path() {
@@ -101,7 +93,7 @@ const selectSourceLine = (line: number) => {
   });
 };
 
-const toolpath: ToolpathPoint[] = interpretToolpath(fileContent);
+const toolpath: InterpretedPoint[] = interpretToolpath(fileContent);
 const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
 const origin = preview.project({ x: 0, y: 0 });
 const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
@@ -234,19 +226,26 @@ return (
       </Text>
     </TouchableOpacity>
   </View>
+  <Text style={styles.legendHeading}>Primary process role</Text>
   <View style={styles.legend}>
     {([
       ['#FF9F0A', 'Rapid'],
-      ['#35D0E5', 'Cut'],
-      ['#64D2FF', 'CW arc'],
-      ['#5E5CE6', 'CCW arc'],
       ['#FF453A', 'Pierce'],
+      ['#8E8E93', 'Lead-in (when encoded)'],
+      ['#35D0E5', 'Cut'],
+      ['#8E8E93', 'Lead-out (when encoded)'],
     ] as const).map(([color, label]) => (
       <View key={label} style={styles.legendItem}>
         <View style={[styles.legendSwatch, { backgroundColor: color }]} />
         <Text style={styles.legendText}>{label}</Text>
       </View>
     ))}
+  </View>
+  <Text style={styles.legendHeading}>Cut geometry subtype</Text>
+  <View style={styles.legend}>
+    <Text style={styles.legendText}>━━ Straight</Text>
+    <Text style={styles.legendText}>┄┄ ↻ CW arc</Text>
+    <Text style={styles.legendText}>┈┈ ↺ CCW arc</Text>
   </View>
   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
   <TouchableOpacity style={styles.primaryButton} onPress={() => setZoom(Math.max(0.5, zoom - 0.5))}>
@@ -354,7 +353,7 @@ return (
         transformOrigin: 'left center',
       }}
     >
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 4 : 2, borderStyle: point.mode === 'G00' ? 'dashed' : 'solid' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 4 : 2, borderStyle: point.mode === 'G00' || point.geometry === 'arc-cw' ? 'dashed' : point.geometry === 'arc-ccw' ? 'dotted' : 'solid' }} />
     </TouchableOpacity>
     {point.pierce && (
       <TouchableOpacity
@@ -369,6 +368,15 @@ return (
           },
         ]}
       />
+    )}
+    {point.commandEnd && (point.geometry === 'arc-cw' || point.geometry === 'arc-ccw') && (
+      <Text
+        pointerEvents="none"
+        accessibilityLabel={`Cut ${point.geometry === 'arc-cw' ? 'clockwise' : 'counterclockwise'} arc direction`}
+        style={[styles.arcDirection, { left: x2 - 6, top: y2 - 18 }]}
+      >
+        {point.geometry === 'arc-cw' ? '↻' : '↺'}
+      </Text>
     )}
     {showLineIds && point.commandEnd && point.line !== undefined && (
       <TouchableOpacity
@@ -721,6 +729,13 @@ secondaryButton: {
     gap: 10,
     marginBottom: 10,
   },
+  legendHeading: {
+    color: '#F2F2F7',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 3,
+  },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -734,6 +749,12 @@ secondaryButton: {
   legendText: {
     color: '#aaa',
     fontSize: 11,
+  },
+  arcDirection: {
+    position: 'absolute',
+    color: '#35D0E5',
+    fontSize: 16,
+    fontWeight: '700',
   },
   pierceMarker: {
     position: 'absolute',

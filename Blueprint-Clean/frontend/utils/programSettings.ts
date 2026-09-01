@@ -15,6 +15,8 @@ export function inspectProgramSettings(lines: readonly string[]) {
       unresolved.push({ line: lineNumber, raw: line, description: 'Malformed comment; subsequent modal state is uncertain.' });
       units = undefined; mode = undefined; return;
     }
+    // Percent-only records are standard program delimiters, not process data.
+    if (code.trim() === '%') return;
     const pattern = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
     const tokens = [...code.matchAll(pattern)];
     if (code.replace(pattern, '').trim()) {
