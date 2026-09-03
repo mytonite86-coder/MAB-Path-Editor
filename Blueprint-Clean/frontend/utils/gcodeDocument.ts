@@ -1,7 +1,13 @@
+import { isAsciiDxf, parseDxfPreview } from './dxfPreview.ts';
+
 export type TextDocument = {
   lines: string[];
   endings: string[];
   hasUtf8Bom: boolean;
+  sourceKind?: 'controller-text' | 'dxf';
+  previewGeometry?: InterpretedPoint[];
+  unsupportedEntities?: Record<string, number>;
+  resolvedBlocks?: string[];
 };
 
 export type InterpretedPoint = {
@@ -13,6 +19,7 @@ export type InterpretedPoint = {
   commandEnd?: boolean;
   role?: 'rapid' | 'cut';
   geometry?: 'straight' | 'arc-cw' | 'arc-ccw';
+  breakBefore?: boolean;
 };
 
 export function motionSemantics(mode: InterpretedPoint['mode']): Pick<InterpretedPoint, 'role' | 'geometry'> {
@@ -66,7 +73,12 @@ export function importControllerDocument(bytes: Uint8Array): TextDocument {
     throw new Error('Binary data or unsupported encoding recognized. A verified round-trip codec is required.');
   }
   const document = decodeTextDocument(bytes);
-  if (!serializeTextDocument(document).trim()) {
+  const source = serializeTextDocument(document);
+  if (isAsciiDxf(source)) {
+    const preview = parseDxfPreview(source);
+    return { ...document, sourceKind: 'dxf', previewGeometry: preview.points, unsupportedEntities: preview.unsupportedEntities, resolvedBlocks: preview.resolvedBlocks };
+  }
+  if (!source.trim()) {
     throw new Error('The selected file is empty; no controller program was found.');
   }
 

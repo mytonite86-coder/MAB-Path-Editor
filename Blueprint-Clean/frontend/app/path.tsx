@@ -51,6 +51,10 @@ const isSyncingScroll = useRef(false);
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [lineEndings, setLineEndings] = useState<string[]>([]);
 const [hasUtf8Bom, setHasUtf8Bom] = useState(false);
+const [sourceKind, setSourceKind] = useState<TextDocument['sourceKind']>('controller-text');
+const [importedPreview, setImportedPreview] = useState<InterpretedPoint[]>([]);
+const [unsupportedEntities, setUnsupportedEntities] = useState<Record<string, number>>({});
+const [resolvedBlocks, setResolvedBlocks] = useState<string[]>([]);
 const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
 const [importError, setImportError] = useState('');
@@ -93,7 +97,7 @@ const selectSourceLine = (line: number) => {
   });
 };
 
-const toolpath: InterpretedPoint[] = interpretToolpath(fileContent);
+const toolpath: InterpretedPoint[] = sourceKind === 'dxf' ? importedPreview : interpretToolpath(fileContent);
 const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
 const origin = preview.project({ x: 0, y: 0 });
 const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
@@ -145,6 +149,10 @@ return (
     setFileContent(document.lines);
     setLineEndings(document.endings);
     setHasUtf8Bom(document.hasUtf8Bom);
+    setSourceKind(document.sourceKind ?? 'controller-text');
+    setImportedPreview(document.previewGeometry ?? []);
+    setUnsupportedEntities(document.unsupportedEntities ?? {});
+    setResolvedBlocks(document.resolvedBlocks ?? []);
     setHistory([]);
     setSelectedLine(null);
     setZoom(1); setPanX(0); setPanY(0);
@@ -161,6 +169,10 @@ return (
       <Text style={styles.primaryText}>Import CNC File</Text>
     </TouchableOpacity>
 {importError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{importError}</Text>}
+{sourceKind === 'dxf' && <Text accessibilityRole="text" style={{ color: '#FF9F0A' }}>
+  DXF preview resolved {resolvedBlocks.length ? resolvedBlocks.join(', ') : 'top-level geometry'}. Preview-only: DXF geometry editing is not enabled.
+  {Object.keys(unsupportedEntities).length ? ` Unsupported and not rendered: ${Object.entries(unsupportedEntities).map(([type, count]) => `${count} ${type}`).join(', ')}.` : ''}
+</Text>}
 {fileName !== '' && (
   <ScrollView
   ref={codeScrollRef}
@@ -309,7 +321,7 @@ return (
    <View pointerEvents="none" style={{ position: 'absolute', left: origin.x, top: 0, height: 240, borderLeftWidth: 1, borderColor: '#555' }} />
    <Text pointerEvents="none" style={{ position: 'absolute', left: origin.x + 4, top: origin.y + 4, color: '#aaa', fontSize: 10 }}>0,0</Text>
    {toolpath.map((point, i) => {
-  if (i === 0) return null;
+  if (i === 0 || point.breakBefore) return null;
 
   const prev = toolpath[i - 1];
   if (
