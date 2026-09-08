@@ -1,13 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { inspectProgramSettings } from '../utils/programSettings';
 
 export default function ProgramSettings({ lines, onSelect }: { lines: string[]; onSelect: (line: number) => void }) {
   const [open, setOpen] = useState(false);
   const evidence = useMemo(() => open ? inspectProgramSettings(lines) : null, [lines, open]);
-  const text = { color: '#DDD', marginVertical: 6 };
-  return <View style={{ padding: 16, backgroundColor: '#1A1A1A', marginVertical: 12, borderRadius: 8 }}>
-    <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Text style={text}>Program Settings — read only {open ? '▾' : '▸'}</Text></TouchableOpacity>
+  const text = { color: '#D8E0E8', marginVertical: 6, fontSize: 15 };
+  return <View style={{ padding: 16, backgroundColor: '#0D1925', borderColor: '#284865', borderWidth: 1, borderRadius: 14 }}>
+    <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Ionicons name="settings-outline" size={24} color="#0A84FF" />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Program Settings</Text>
+        <Text style={{ color: '#B8C1CC', fontSize: 13 }}>View programmed values and options</Text>
+      </View>
+      <Ionicons name={open ? 'chevron-up-outline' : 'chevron-down-outline'} size={22} color="#64B5FF" />
+    </TouchableOpacity>
     {evidence && <ScrollView nestedScrollEnabled style={{ maxHeight: 360 }}>
       <Text style={text}>Source evidence only. Opening or selecting a setting never edits the program.</Text>
       <Text style={text}>Feed / program speed</Text>

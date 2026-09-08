@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { Ionicons } from '@expo/vector-icons';
 
 import { encodeTextDocument, type InterpretedPoint } from '../utils/gcodeDocument.ts';
 import {
@@ -54,7 +55,11 @@ export default function NestingWorkspace({ canExport, onUpgrade }: { canExport: 
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Nest setup failed.'); }
   };
 
-  if (!open) return <TouchableOpacity accessibilityRole="button" style={styles.primary} onPress={() => setOpen(true)}><Text style={styles.primaryText}>START NEST</Text></TouchableOpacity>;
+  if (!open) return <TouchableOpacity accessibilityRole="button" style={[styles.primary, styles.launchPrimary]} onPress={() => setOpen(true)}>
+    <Ionicons name="play-outline" size={30} color="#fff" />
+    <Text style={styles.primaryText}>START NEST</Text>
+    <Text style={styles.launchHint}>Optimize and arrange parts</Text>
+  </TouchableOpacity>;
 
   if (!session) return <View style={styles.panel}>
     <Text style={styles.heading}>Start Nest</Text>
@@ -157,6 +162,8 @@ const styles = StyleSheet.create({
   choice: { backgroundColor: '#333', borderRadius: 8, padding: 12 },
   selected: { borderWidth: 2, borderColor: '#4FC3F7' },
   primary: { backgroundColor: '#007AFF', padding: 14, borderRadius: 10, alignItems: 'center' },
+  launchPrimary: { minHeight: 92, justifyContent: 'center', gap: 4 },
+  launchHint: { color: '#EAF4FF', fontSize: 12 },
   disabled: { backgroundColor: '#555' },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   preview: { height: 260, backgroundColor: '#111', overflow: 'hidden' },
