@@ -48,18 +48,19 @@ async def test_new_price_checkout_preserves_existing_records(isolated_collection
     )
     price = captured["line_items"][0]["price_data"]
     assert captured["mode"] == "subscription"
-    assert price["unit_amount"] == 999
+    assert price["unit_amount"] == 1499
     assert price["currency"] == "usd"
     assert price["recurring"] == {"interval": "month", "interval_count": 1}
     assert captured["metadata"]["product_id"] == "mab_s1"
     assert captured["metadata"]["package_id"] == "mab_s1_monthly"
+    assert price["product_data"]["name"] == "M.A.B. S1.5"
     assert "/MAB-Path-Editor/path?" in captured["success_url"]
     assert "checkout=success" in captured["success_url"]
     assert server.PREMIUM_PACKAGES["pathseal_monthly"]["amount"] == 9.99
     assert await isolated_collections.users.find_one({"_id": old_user["_id"]}) == old_user
     assert await isolated_collections.payment_transactions.find_one({"_id": old_transaction["_id"]}) == old_transaction
     new_transaction = await isolated_collections.payment_transactions.find_one({"session_id": "cs_test_price_only"})
-    assert new_transaction["amount"] == 9.99
+    assert new_transaction["amount"] == 14.99
 
 
 @pytest.mark.anyio
@@ -156,7 +157,7 @@ async def test_monthly_cancellation_preserves_permanent_access(
 
 
 @pytest.mark.anyio
-async def test_real_stripe_test_checkout_is_monthly_and_999(
+async def test_real_stripe_test_checkout_is_monthly_and_1499(
     isolated_collections,
 ):
     test_key = os.environ.get("STRIPE_TEST_API_KEY", "")
@@ -184,7 +185,7 @@ async def test_real_stripe_test_checkout_is_monthly_and_999(
         )
         price = session.line_items.data[0].price
         assert session.mode == "subscription"
-        assert price.unit_amount == 999
+        assert price.unit_amount == 1499
         assert price.currency == "usd"
         assert price.recurring.interval == "month"
 
@@ -193,7 +194,7 @@ async def test_real_stripe_test_checkout_is_monthly_and_999(
         )
         assert transaction["package_id"] == "mab_s1_monthly"
         assert transaction["billing_mode"] == "subscription"
-        assert transaction["amount"] == 9.99
+        assert transaction["amount"] == 14.99
     finally:
         server.STRIPE_API_KEY = monkeypatch_key
         if session is not None and session.status == "open":
