@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 
-import { importControllerDocument, type InterpretedPoint } from '../utils/gcodeDocument.ts';
+import { encodeTextDocument, type InterpretedPoint } from '../utils/gcodeDocument.ts';
 import {
   cancelActivePart,
   confirmActivePart,
   createNestSession,
   duplicateLastPart,
+  exportCombinedNest,
+  exportReadiness,
   importActivePart,
+  importNestProgram,
   nestWarnings,
   positionedPoints,
   rapidConnections,
@@ -30,10 +33,10 @@ async function pickPart(session: NestSession): Promise<NestSession | null> {
   if (result.canceled || !result.assets[0]?.uri) return null;
   const file = result.assets[0];
   const response = await fetch(file.uri);
-  return importActivePart(session, importControllerDocument(new Uint8Array(await response.arrayBuffer())), file.name || `Part ${session.nextId}`);
+  return importActivePart(session, importNestProgram(new Uint8Array(await response.arrayBuffer())), file.name || `Part ${session.nextId}`);
 }
 
-export default function NestingWorkspace() {
+export default function NestingWorkspace({ canExport, onUpgrade }: { canExport: boolean; onUpgrade: () => void }) {
   const [open, setOpen] = useState(false);
   const [width, setWidth] = useState('');
   const [length, setLength] = useState('');
@@ -72,6 +75,25 @@ export default function NestingWorkspace() {
   const plateB = fit.project({ x: session.plate.width, y: 0 });
   const start = fit.project(session.plate.start);
   const warnings = nestWarnings(session);
+  const exportBlocked = exportReadiness(session);
+
+  const exportNest = () => {
+    if (!canExport) { onUpgrade(); return; }
+    if (Platform.OS !== 'web') { setMessage('Combined nesting export is enabled for the M.A.B. web application only.'); return; }
+    try {
+      const bytes = encodeTextDocument(exportCombinedNest(session));
+      const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'combined-nest.cnc';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setMessage('Combined CNC program exported. Original part sources remain unchanged.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Combined export failed safely.'); }
+  };
 
   const moveActive = (pageX: number, pageY: number) => {
     if (!session.active || !lastDrag) return;
@@ -117,9 +139,10 @@ export default function NestingWorkspace() {
     </View> : <View style={styles.row}>
       <TouchableOpacity style={styles.primary} onPress={() => { try { setSession(duplicateLastPart(session)); setMessage('Duplicate is active. Drag and confirm it.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not duplicate part.'); } }}><Text style={styles.primaryText}>ADD PART</Text></TouchableOpacity>
       <TouchableOpacity style={styles.primary} onPress={async () => { try { const imported = await pickPart(session); if (imported) { setSession(imported); setMessage('New part is active. Drag and confirm it.'); } } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not import part.'); } }}><Text style={styles.primaryText}>ADD NEW PART</Text></TouchableOpacity>
-      <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: true }} style={[styles.primary, styles.disabled]} onPress={() => setMessage('EXPORT / RUN is locked until a verified controller profile defines complete-program boundaries.')}><Text style={styles.primaryText}>EXPORT / RUN</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: !!exportBlocked }} style={[styles.primary, exportBlocked && styles.disabled]} onPress={exportNest}><Text style={styles.primaryText}>EXPORT / RUN</Text></TouchableOpacity>
     </View>}
-    <Text style={styles.warning}>Combined output is not enabled: %, M2, M30, numbering and checksum handling require a verified controller profile.</Text>
+    {!!exportBlocked && <Text style={styles.warning}>{exportBlocked}</Text>}
+    {!exportBlocked && <Text style={styles.copy}>Verified family: G70 / G91 / M86 with one % wrapper and one final M30.</Text>}
   </View>;
 }
 

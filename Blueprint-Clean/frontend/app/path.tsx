@@ -127,7 +127,7 @@ return (
       Import CNC files, inspect G-code, and preview tool movement.
     </Text>
 
-    <NestingWorkspace />
+    <NestingWorkspace canExport={!isGuest && !!user && isPro} onUpgrade={() => router.push('/upgrade')} />
 
     <TouchableOpacity
       style={styles.primaryButton}

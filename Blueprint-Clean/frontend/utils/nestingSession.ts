@@ -1,4 +1,4 @@
-import { encodeTextDocument, interpretToolpath, type InterpretedPoint, type TextDocument } from './gcodeDocument.ts';
+import { encodeTextDocument, importControllerDocument, interpretToolpath, parseTextDocument, type InterpretedPoint, type TextDocument } from './gcodeDocument.ts';
 
 export type StartCorner = 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
 export type NestPoint = InterpretedPoint & { x: number; y: number };
@@ -11,12 +11,71 @@ export type NestPart = {
   offsetX: number;
   offsetY: number;
 };
+export type NestProgramFamily = {
+  id: 'messer-hypertherm-g70-g91-m86-m30-v1';
+  signature: string;
+  headerEnd: number;
+  terminator: number;
+};
 export type NestSession = {
   plate: { width: number; length: number; corner: StartCorner; start: { x: number; y: number } };
   anchored: NestPart[];
   active?: NestPart;
   nextId: number;
+  family?: NestProgramFamily;
 };
+
+const FAMILY_ERROR = 'Unsupported program format for this nest. Added parts must match the CNC program family established by Part 1.';
+const ALLOWED_G = new Set([0, 1, 2, 3, 4, 40, 41, 70, 91]);
+const ALLOWED_M = new Set([14, 15, 20, 21, 30, 86, 620, 621]);
+
+function executable(line: string): string {
+  let depth = 0;
+  let tail = false;
+  return [...line].map(character => {
+    if (character === ';' && depth === 0) tail = true;
+    if (tail) return ' ';
+    if (character === '(') { depth += 1; return ' '; }
+    if (character === ')' && depth > 0) { depth -= 1; return ' '; }
+    return depth > 0 ? ' ' : character;
+  }).join('').trim();
+}
+
+export function inspectNestProgram(source: TextDocument): NestProgramFamily {
+  if (source.sourceKind === 'dxf' || source.hasUtf8Bom) throw new Error(FAMILY_ERROR);
+  const nonblank = source.lines.map((line, index) => ({ line: line.trim(), index })).filter(record => record.line !== '');
+  if (nonblank.length < 6 || nonblank[0].line !== '%' || nonblank[1].line.toUpperCase() !== 'G70' ||
+      nonblank[2].line.toUpperCase() !== 'G91' || nonblank[3].line.toUpperCase() !== 'M86' ||
+      nonblank.at(-1)!.line.toUpperCase() !== 'M30') throw new Error(FAMILY_ERROR);
+  if (nonblank.filter(record => record.line === '%').length !== 1) throw new Error(FAMILY_ERROR);
+
+  let motion = 0;
+  for (const { line, index } of nonblank) {
+    const code = executable(line);
+    if (!code) continue;
+    if (code === '%') continue;
+    if (/^N\d+/i.test(code) || code.includes('*') || !/^(?:[A-Z]\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*)+$/i.test(code)) throw new Error(FAMILY_ERROR);
+    for (const match of code.matchAll(/([GM])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi)) {
+      const value = Number(match[2]);
+      if (match[1].toUpperCase() === 'G' && !ALLOWED_G.has(value)) throw new Error(FAMILY_ERROR);
+      if (match[1].toUpperCase() === 'M' && !ALLOWED_M.has(value)) throw new Error(FAMILY_ERROR);
+      if (match[1].toUpperCase() === 'M' && value === 30 && index !== nonblank.at(-1)!.index) throw new Error(FAMILY_ERROR);
+      if (match[1].toUpperCase() === 'G' && [0, 1, 2, 3].includes(value)) motion += 1;
+    }
+  }
+  if (motion === 0 || !/^G0?0(?:\s*[XY])/i.test(executable(nonblank[4].line))) throw new Error(FAMILY_ERROR);
+  return {
+    id: 'messer-hypertherm-g70-g91-m86-m30-v1',
+    signature: 'text|%|G70|G91|implicit-G91.1|M86|unnumbered|no-checksum|M30',
+    headerEnd: nonblank[3].index + 1,
+    terminator: nonblank.at(-1)!.index,
+  };
+}
+
+export function importNestProgram(bytes: Uint8Array): TextDocument {
+  try { return importControllerDocument(bytes); }
+  catch { throw new Error(FAMILY_ERROR); }
+}
 
 function finitePositive(value: number, label: string): number {
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be a finite positive number.`);
@@ -38,7 +97,8 @@ export function createNestSession(width: number, length: number, corner: StartCo
 }
 
 function supportedPart(source: TextDocument, name: string, session: NestSession): NestPart {
-  if (source.sourceKind === 'dxf') throw new Error('DXF is preview-only and cannot be transformed or exported in S1.5 nesting.');
+  const family = inspectNestProgram(source);
+  if (session.family && session.family.signature !== family.signature) throw new Error(FAMILY_ERROR);
   const original = interpretToolpath(source.lines);
   if (original.length < 2 || original.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
     throw new Error('This program does not have finite supported toolpath geometry for nesting.');
@@ -57,7 +117,8 @@ function supportedPart(source: TextDocument, name: string, session: NestSession)
 
 export function importActivePart(session: NestSession, source: TextDocument, name: string): NestSession {
   if (session.active) throw new Error('Confirm or cancel the current active part before importing another.');
-  return { ...session, active: supportedPart(source, name, session), nextId: session.nextId + 1 };
+  const family = inspectNestProgram(source);
+  return { ...session, family: session.family ?? family, active: supportedPart(source, name, session), nextId: session.nextId + 1 };
 }
 
 export function duplicateLastPart(session: NestSession): NestSession {
@@ -146,6 +207,39 @@ export function assertSourcesPreserved(session: NestSession): void {
   }
 }
 
-export function exportCombinedNest(): never {
-  throw new Error('Combined export is unavailable until a verified controller profile defines %, M2, M30, numbering and checksum boundaries.');
+function coordinate(value: number): string {
+  const rounded = Number(value.toFixed(6));
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+}
+
+export function exportReadiness(session: NestSession): string | null {
+  if (session.active) return 'Confirm or cancel the active placement before export.';
+  if (session.anchored.length === 0) return 'Confirm at least one compatible part before export.';
+  if (!session.family) return FAMILY_ERROR;
+  try {
+    assertSourcesPreserved(session);
+    for (const part of session.anchored) {
+      if (inspectNestProgram(part.source).signature !== session.family.signature) return FAMILY_ERROR;
+    }
+  } catch (error) { return error instanceof Error ? error.message : FAMILY_ERROR; }
+  return null;
+}
+
+export function exportCombinedNest(session: NestSession): TextDocument {
+  const blocked = exportReadiness(session);
+  if (blocked) throw new Error(blocked);
+  const first = session.anchored[0];
+  const firstProfile = inspectNestProgram(first.source);
+  const output = first.source.lines.slice(0, firstProfile.headerEnd);
+  let current = session.plate.start;
+
+  for (const part of session.anchored) {
+    const profile = inspectNestProgram(part.source);
+    output.push(`G00X${coordinate(part.offsetX - current.x)}Y${coordinate(part.offsetY - current.y)}`);
+    output.push(...part.source.lines.slice(profile.headerEnd, profile.terminator));
+    const end = positionedPoints(part).at(-1)!;
+    current = { x: end.x, y: end.y };
+  }
+  output.push('M30');
+  return parseTextDocument(output.join('\r\n') + '\r\n');
 }
