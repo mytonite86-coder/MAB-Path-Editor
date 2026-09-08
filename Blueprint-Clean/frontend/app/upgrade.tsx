@@ -80,7 +80,7 @@ const handleSubscribe = async () => {
   contentContainerStyle={styles.container}
   showsVerticalScrollIndicator={false}
 >
-      <Text style={styles.title}>Unlock M.A.B. S1</Text>
+      <Text style={styles.title}>Unlock M.A.B. S1.5</Text>
 
       <Image
   source={require("../assets/images/featuredgraphic.png")}
@@ -98,7 +98,7 @@ const handleSubscribe = async () => {
   <Text style={styles.featureItem}>✓ Unlimited G-code Editing</Text>
   <Text style={styles.featureItem}>✓ Repair Broken CNC Files</Text>
   <Text style={styles.featureItem}>✓ Export & Share G-code</Text>
-  <Text style={styles.featureItem}>✓ M.A.B. S1 Updates While Subscribed</Text>
+  <Text style={styles.featureItem}>✓ M.A.B. S1.5 Updates While Subscribed</Text>
   </View>
 
       <TouchableOpacity
