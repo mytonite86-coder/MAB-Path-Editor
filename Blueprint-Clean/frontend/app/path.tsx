@@ -30,6 +30,7 @@ import {
 import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
 import InsertMotionDialog from '../components/InsertMotionDialog';
 import ProgramSettings from '../components/ProgramSettings';
+import NestingWorkspace from '../components/NestingWorkspace';
 import { reviewMeasurementEdit } from '../utils/measurementEdit';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
@@ -125,7 +126,8 @@ return (
     <Text style={styles.subtitle}>
       Import CNC files, inspect G-code, and preview tool movement.
     </Text>
-   
+
+    <NestingWorkspace />
 
     <TouchableOpacity
       style={styles.primaryButton}
