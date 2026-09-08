@@ -89,7 +89,7 @@ const handleSubscribe = async () => {
 />
 
       <Text style={styles.subtitle}>
-        Unlimited G-code editing, repair, copy, and export for $9.99 per month.
+        M.A.B. S1.5 mobile CNC path editing, lightweight nesting, and supported combined export for $14.99 per month.
       </Text>
 
 
@@ -105,7 +105,7 @@ const handleSubscribe = async () => {
         style={styles.button}
         onPress={handleSubscribe}
       >
-        <Text style={styles.buttonText}>Subscribe • $9.99/month</Text>
+        <Text style={styles.buttonText}>Subscribe • $14.99/month</Text>
       </TouchableOpacity>
 
  
