@@ -349,7 +349,38 @@ export function reconstructProgramStructure(
     status: 'unsupported', controllerProfileId: interpreter.id, reason: result.reason,
     parts: [], contours: [], events,
   };
-  return { status: 'verified', controllerProfileId: interpreter.id, parts: result.parts, contours: result.contours, events };
+  const ownedEvents = events.map(event => ({ ...event }));
+  for (const part of result.parts) {
+    for (const order of part.orderedEventOrders) {
+      const event = ownedEvents[order];
+      if (!event || (event.programPartId && event.programPartId !== part.id)) return {
+        status: 'unsupported', controllerProfileId: interpreter.id,
+        reason: 'Controller profile returned invalid or overlapping part ownership.',
+        parts: [], contours: [], events,
+      };
+      event.programPartId = part.id;
+    }
+    for (const contour of part.contours) {
+      for (const order of contour.eventOrders) {
+        const event = ownedEvents[order];
+        if (!event || event.programPartId !== part.id || (event.contourId && event.contourId !== contour.id)) return {
+          status: 'unsupported', controllerProfileId: interpreter.id,
+          reason: 'Controller profile returned invalid contour ownership.',
+          parts: [], contours: [], events,
+        };
+        event.contourId = contour.id;
+      }
+    }
+  }
+  return { status: 'verified', controllerProfileId: interpreter.id, parts: result.parts, contours: result.contours, events: ownedEvents };
+}
+
+export function interpretStructuredToolpath(lines: string[], structure: ProgramStructure): InterpretedPoint[] {
+  return interpretToolpath(lines).map(point => {
+    if (point.eventIndex === undefined) return point;
+    const event = structure.events[point.eventIndex];
+    return event ? { ...point, programPartId: event.programPartId, contourId: event.contourId } : point;
+  });
 }
 
 type EditableWord = 'G' | 'X' | 'Y' | 'I' | 'J';
