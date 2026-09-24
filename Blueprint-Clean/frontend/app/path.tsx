@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 import {
   View,
@@ -22,6 +22,8 @@ import {
   importControllerDocument,
   encodeTextDocument,
   interpretToolpath,
+  interpretStructuredToolpath,
+  reconstructProgramStructure,
   readSourceLineValues,
   coordinateDescription,
   serializeTextDocument,
@@ -33,6 +35,8 @@ import InsertMotionDialog from '../components/InsertMotionDialog';
 import ProgramSettings from '../components/ProgramSettings';
 import NestingWorkspace from '../components/NestingWorkspace';
 import { reviewMeasurementEdit } from '../utils/measurementEdit';
+import { messerProgrammedNestProfile } from '../utils/messerProgrammedNest';
+import { rotateVerifiedProgramPart } from '../utils/programPartRotation';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
@@ -85,6 +89,18 @@ const [editI, setEditI] = useState('');
 const [editJ, setEditJ] = useState('');
 const [scrollLocked, setScrollLocked] = useState(false);
 const [showLineIds, setShowLineIds] = useState(false);
+const [editorMode, setEditorMode] = useState<'line' | 'part'>('line');
+const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
+const selectedPartRef = useRef<string | null>(null);
+const documentRef = useRef<TextDocument>({ lines: [], endings: [], hasUtf8Bom: false });
+const holdDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const holdRepeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+const holdAppliedRef = useRef(false);
+documentRef.current = currentDocument();
+useEffect(() => () => {
+  if (holdDelayRef.current) clearTimeout(holdDelayRef.current);
+  if (holdRepeatRef.current) clearInterval(holdRepeatRef.current);
+}, []);
 
 const selectSourceLine = (line: number) => {
   const values = readSourceLineValues(fileContent[line] ?? '');
@@ -101,7 +117,65 @@ const selectSourceLine = (line: number) => {
   });
 };
 
-const toolpath: InterpretedPoint[] = sourceKind === 'dxf' ? importedPreview : interpretToolpath(fileContent);
+const programStructure = sourceKind === 'controller-text' && fileContent.length
+  ? reconstructProgramStructure(fileContent, messerProgrammedNestProfile)
+  : reconstructProgramStructure([]);
+const partModeAvailable = programStructure.status === 'verified';
+const toolpath: InterpretedPoint[] = sourceKind === 'dxf'
+  ? importedPreview
+  : partModeAvailable
+    ? interpretStructuredToolpath(fileContent, programStructure)
+    : interpretToolpath(fileContent);
+
+const selectPreviewPoint = (point: InterpretedPoint) => {
+  if (editorMode === 'part') {
+    const partId = point.programPartId ?? null;
+    setSelectedPartId(partId);
+    selectedPartRef.current = partId;
+    setEditError(partId ? '' : 'This geometry has no verified ProgramPart identity.');
+    return;
+  }
+  if (point.line !== undefined) selectSourceLine(point.line);
+};
+
+const rotateSelectedPart = (degrees: number, addUndo: boolean) => {
+  const partId = selectedPartRef.current;
+  if (!partId) { setEditError('Select a verified whole part before rotating.'); return false; }
+  try {
+    const before = documentRef.current;
+    const structure = reconstructProgramStructure(before.lines, messerProgrammedNestProfile);
+    const next = rotateVerifiedProgramPart(before, structure, partId, degrees);
+    if (addUndo) setHistory(previous => [...previous, before]);
+    documentRef.current = next;
+    setFileContent(next.lines);
+    setEditError('');
+    return true;
+  } catch (error) {
+    setEditError(error instanceof Error ? error.message : 'Selected part could not be rotated safely.');
+    return false;
+  }
+};
+
+const beginRotation = (degrees: number) => {
+  if (!selectedPartRef.current) { setEditError('Select a verified whole part before rotating.'); return; }
+  holdAppliedRef.current = false;
+  holdDelayRef.current = setTimeout(() => {
+    holdAppliedRef.current = true;
+    const before = documentRef.current;
+    if (!rotateSelectedPart(degrees, false)) return;
+    setHistory(previous => [...previous, before]);
+    holdRepeatRef.current = setInterval(() => rotateSelectedPart(degrees, false), 90);
+  }, 350);
+};
+
+const endRotation = (degrees: number) => {
+  if (holdDelayRef.current) clearTimeout(holdDelayRef.current);
+  if (holdRepeatRef.current) clearInterval(holdRepeatRef.current);
+  holdDelayRef.current = null;
+  holdRepeatRef.current = null;
+  if (!holdAppliedRef.current) rotateSelectedPart(degrees, true);
+  holdAppliedRef.current = false;
+};
 const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
 const origin = preview.project({ x: 0, y: 0 });
 const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
@@ -169,6 +243,8 @@ return (
     setResolvedBlocks(document.resolvedBlocks ?? []);
     setHistory([]);
     setSelectedLine(null);
+    setEditorMode('line');
+    setSelectedPartId(null); selectedPartRef.current = null;
     setZoom(1); setPanX(0); setPanY(0);
     setEditX(''); setEditY(''); setEditG(''); setEditI(''); setEditJ(''); setEditError('');
   } catch (error) {
@@ -220,6 +296,45 @@ return (
       </Text>
     </TouchableOpacity>
   </View>
+  {sourceKind === 'controller-text' && fileContent.length > 0 && <>
+    <View style={styles.partControlRow}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Rotate selected part counterclockwise"
+        disabled={editorMode !== 'part' || !selectedPartId}
+        style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
+        onPressIn={() => beginRotation(-1)}
+        onPressOut={() => endRotation(-1)}
+      ><Text style={styles.rotationButtonText}>↺ CCW</Text></TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="switch"
+        accessibilityState={{ checked: editorMode === 'part', disabled: !partModeAvailable }}
+        style={[styles.modeButton, editorMode === 'part' && styles.modeButtonActive, !partModeAvailable && styles.partControlDisabled]}
+        onPress={() => {
+          if (!partModeAvailable) { setEditError('PART mode is unavailable because this program has no verified ProgramPart identity.'); return; }
+          const next = editorMode === 'line' ? 'part' : 'line';
+          setEditorMode(next);
+          if (next === 'line') { setSelectedPartId(null); selectedPartRef.current = null; }
+          setEditError('');
+        }}
+      ><Text style={styles.modeButtonText}>{editorMode === 'line' ? 'LINE | PART' : 'LINE | PART ✓'}</Text></TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Rotate selected part clockwise"
+        disabled={editorMode !== 'part' || !selectedPartId}
+        style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
+        onPressIn={() => beginRotation(1)}
+        onPressOut={() => endRotation(1)}
+      ><Text style={styles.rotationButtonText}>CW ↻</Text></TouchableOpacity>
+    </View>
+    <Text style={styles.partModeNotice}>
+      {partModeAvailable
+        ? editorMode === 'part'
+          ? selectedPartId ? `PART mode · ${selectedPartId} selected` : 'PART mode · tap verified part geometry to select the whole part'
+          : 'LINE mode · individual source-line editing remains active'
+        : 'PART mode unavailable · controller/program identity is not verified'}
+    </Text>
+  </>}
   <View style={styles.legend}>
     {([
       ['#FF9F0A', 'Rapid'],
@@ -298,6 +413,13 @@ return (
   }}
   onResponderRelease={() => setIsDragging(false)}
 >
+   {editorMode === 'part' && <TouchableOpacity
+     accessibilityRole="button"
+     accessibilityLabel="Deselect programmed part"
+     activeOpacity={1}
+     onPress={() => { setSelectedPartId(null); selectedPartRef.current = null; setEditError(''); }}
+     style={StyleSheet.absoluteFill}
+   />}
    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: origin.y, width: previewWidth, borderTopWidth: 1, borderColor: '#555' }} />
    <View pointerEvents="none" style={{ position: 'absolute', left: origin.x, top: 0, height: 240, borderLeftWidth: 1, borderColor: '#555' }} />
    <Text pointerEvents="none" style={{ position: 'absolute', left: origin.x + 4, top: origin.y + 4, color: '#aaa', fontSize: 10 }}>0,0</Text>
@@ -323,7 +445,8 @@ return (
   const length = Math.sqrt(dx * dx + dy * dy);
   const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-  const isSelected = point.line === selectedLine;
+  const isPartSelected = editorMode === 'part' && point.programPartId === selectedPartId;
+  const isSelected = editorMode === 'line' ? point.line === selectedLine : isPartSelected;
   const color = point.mode ? movementColor[point.mode] : '#35D0E5';
 
   return (
@@ -334,8 +457,8 @@ return (
         ? 'Toolpath movement'
         : `Select source line ${point.line + 1}`}
       activeOpacity={0.7}
-      disabled={point.line === undefined}
-      onPress={() => point.line !== undefined && selectSourceLine(point.line)}
+      disabled={editorMode === 'line' ? point.line === undefined : point.programPartId === undefined}
+      onPress={() => selectPreviewPoint(point)}
       style={{
         position: 'absolute',
         left: x1,
@@ -346,13 +469,13 @@ return (
         transformOrigin: 'left center',
       }}
     >
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 4 : 2, borderStyle: point.mode === 'G00' || point.geometry === 'arc-cw' ? 'dashed' : point.geometry === 'arc-ccw' ? 'dotted' : 'solid' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 5 : 2, borderStyle: point.mode === 'G00' || point.geometry === 'arc-cw' ? 'dashed' : point.geometry === 'arc-ccw' ? 'dotted' : 'solid' }} />
     </TouchableOpacity>
     {point.pierce && (
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={`Pierce at source line ${(point.line ?? 0) + 1}`}
-        onPress={() => point.line !== undefined && selectSourceLine(point.line)}
+        onPress={() => selectPreviewPoint(point)}
         style={[
           styles.pierceMarker,
           {
@@ -375,7 +498,7 @@ return (
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={`Select source line ${point.line + 1}`}
-        onPress={() => selectSourceLine(point.line!)}
+        onPress={() => selectPreviewPoint(point)}
         style={[
           styles.lineIdBadge,
           {
@@ -552,6 +675,7 @@ return (
 
     const last = history[history.length - 1];
 
+    documentRef.current = last;
     setFileContent(last.lines);
     setLineEndings(last.endings);
     setHasUtf8Bom(last.hasUtf8Bom);
@@ -737,6 +861,14 @@ secondaryButton: {
     justifyContent: 'space-between',
     gap: 12,
   },
+  partControlRow: { flexDirection: 'row', alignItems: 'stretch', gap: 9 },
+  rotationButton: { flex: 1, minHeight: 48, borderRadius: 10, backgroundColor: '#6D28D9', borderColor: '#A78BFA', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  rotationButtonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  modeButton: { flex: 1.25, minHeight: 48, borderRadius: 10, backgroundColor: '#087CF0', borderColor: '#64B5FF', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modeButtonActive: { backgroundColor: '#075985', borderColor: '#22D3EE', borderWidth: 2 },
+  modeButtonText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  partControlDisabled: { opacity: 0.38 },
+  partModeNotice: { color: '#C4CFDA', fontSize: 13, textAlign: 'center' },
   idToggle: {
     minHeight: 44,
     backgroundColor: '#333',

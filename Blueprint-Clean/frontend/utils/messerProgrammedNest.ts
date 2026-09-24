@@ -34,7 +34,7 @@ export const messerProgrammedNestProfile: ControllerBoundaryInterpreter = {
     const programEnd = meaningful.at(-1)!.order;
     const parts: ProgramPart[] = [];
     const contours: ProgramContour[] = [];
-    const repeatedBodies: string[] = [];
+    const repeatedStructures: string[] = [];
     let cursor = headerEnd + 1;
 
     while (cursor < programEnd) {
@@ -88,13 +88,17 @@ export const messerProgrammedNestProfile: ControllerBoundaryInterpreter = {
       };
       parts.push(part);
       contours.push(contour);
-      repeatedBodies.push(events.slice(start + 1, g40 + 1).map(event => event.rawSourceLine).join('\n'));
+      repeatedStructures.push(events.slice(start + 1, g40 + 1).map(event => {
+        if (event.geometry) return `motion:${event.geometry.mode}`;
+        if (event.mCodes.length) return `M:${event.mCodes.join(',')}`;
+        return event.rawSourceLine;
+      }).join('\n'));
       cursor = g40 + 1;
     }
 
     if (parts.length < 2) return unsupported('A programmed nest requires repeated, independently bounded part sequences.');
-    if (!repeatedBodies.every(body => body === repeatedBodies[0])) {
-      return unsupported('Repeated programmed-part bodies do not match the calibrated family contract.');
+    if (!repeatedStructures.every(body => body === repeatedStructures[0])) {
+      return unsupported('Repeated programmed-part structures do not match the calibrated family contract.');
     }
     return { status: 'verified' as const, parts, contours };
   },
