@@ -20,7 +20,95 @@ export type InterpretedPoint = {
   role?: 'rapid' | 'cut';
   geometry?: 'straight' | 'arc-cw' | 'arc-ccw';
   breakBefore?: boolean;
+  /** Ordered program event that produced this preview geometry. */
+  eventIndex?: number;
+  /** Populated only after a verified controller profile proves ownership. */
+  programPartId?: string;
+  /** Populated only after a verified controller profile proves ownership. */
+  contourId?: string;
 };
+
+export type ProgramMotionState = {
+  distanceMode: 'absolute' | 'incremental';
+  arcCenterMode: 'absolute' | 'incremental';
+  motionMode?: InterpretedPoint['mode'];
+  units: 'inch' | 'millimeter' | 'unknown';
+};
+
+export type ProgramProcessState = {
+  /** Controller meaning is deliberately unknown until a verified profile supplies it. */
+  activity: 'unknown';
+  observedMCodes: number[];
+};
+
+export type ProgramGeometryRecord = {
+  mode: NonNullable<InterpretedPoint['mode']>;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  x?: number;
+  y?: number;
+  i?: number;
+  j?: number;
+  distanceMode: ProgramMotionState['distanceMode'];
+  arcCenterMode: ProgramMotionState['arcCenterMode'];
+};
+
+export type ProgramEventType =
+  | 'motion' | 'process' | 'feed' | 'state' | 'program-boundary'
+  | 'controller-command' | 'comment' | 'empty';
+
+export type ProgramEvent = {
+  order: number;
+  sourceLine: number;
+  rawSourceLine: string;
+  executable: string;
+  comments: string[];
+  type: ProgramEventType;
+  gCodes: number[];
+  mCodes: number[];
+  feed?: number;
+  geometry?: ProgramGeometryRecord;
+  motionState: ProgramMotionState;
+  processState: ProgramProcessState;
+  programPartId?: string;
+  contourId?: string;
+};
+
+export type SourceLineSpan = { start: number; end: number };
+
+export type ProgramContour = {
+  id: string;
+  ownership: 'verified';
+  kind: 'outer' | 'internal' | 'lead-in' | 'lead-out' | 'unknown';
+  eventOrders: number[];
+  sourceLineSpans: SourceLineSpan[];
+};
+
+export type ProgramPart = {
+  id: string;
+  ownership: 'verified';
+  contours: ProgramContour[];
+  processEventOrders: number[];
+  orderedEventOrders: number[];
+  sourceLineSpans: SourceLineSpan[];
+};
+
+export type ProgramStructure = {
+  status: 'verified' | 'unsupported';
+  controllerProfileId?: string;
+  reason?: string;
+  parts: ProgramPart[];
+  contours: ProgramContour[];
+  events: ProgramEvent[];
+};
+
+/** Controller-family implementations alone may assign part/contour ownership. */
+export interface ControllerBoundaryInterpreter {
+  readonly id: string;
+  reconstruct(events: readonly ProgramEvent[]):
+    | { status: 'unsupported'; reason: string }
+    | { status: 'verified'; parts: ProgramPart[]; contours: ProgramContour[] };
+}
 
 export function motionSemantics(mode: InterpretedPoint['mode']): Pick<InterpretedPoint, 'role' | 'geometry'> {
   if (mode === 'G00') return { role: 'rapid', geometry: 'straight' };
@@ -161,6 +249,140 @@ function executableCode(line: string): string {
   }).join('');
 }
 
+function sourceComments(line: string): string[] {
+  const comments = [...line.matchAll(/\(([^)]*)\)/g)].map(match => match[1]);
+  const semicolon = codeBeforeComment(line).length;
+  if (semicolon < line.length) comments.push(line.slice(semicolon + 1));
+  return comments;
+}
+
+const PROGRAM_WORD = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
+
+/** Preserve the ordered source program without assigning unverified manufacturing ownership. */
+export function parseProgramEvents(lines: readonly string[]): ProgramEvent[] {
+  const events: ProgramEvent[] = [];
+  let current = { x: 0, y: 0 };
+  let distanceMode: ProgramMotionState['distanceMode'] = 'absolute';
+  let arcCenterMode: ProgramMotionState['arcCenterMode'] = 'incremental';
+  let motionMode: InterpretedPoint['mode'];
+  let units: ProgramMotionState['units'] = 'unknown';
+  const observedMCodes: number[] = [];
+
+  lines.forEach((rawSourceLine, sourceLine) => {
+    const executable = executableCode(rawSourceLine).trim();
+    const words = [...executable.matchAll(PROGRAM_WORD)];
+    const gCodes = words.filter(word => word[1].toUpperCase() === 'G').map(word => Number(word[2]));
+    const mCodes = words.filter(word => word[1].toUpperCase() === 'M').map(word => Number(word[2]));
+    const values = new Map<string, number>();
+    for (const word of words) values.set(word[1].toUpperCase(), Number(word[2]));
+
+    for (const code of gCodes) {
+      if (code === 20) units = 'inch';
+      if (code === 21) units = 'millimeter';
+      if (code === 90) distanceMode = 'absolute';
+      if (code === 91) distanceMode = 'incremental';
+      if (code === 90.1) arcCenterMode = 'absolute';
+      if (code === 91.1) arcCenterMode = 'incremental';
+      if (Number.isInteger(code) && code >= 0 && code <= 3) motionMode = `G0${code}` as InterpretedPoint['mode'];
+    }
+    observedMCodes.push(...mCodes);
+
+    let geometry: ProgramGeometryRecord | undefined;
+    if (motionMode && (values.has('X') || values.has('Y'))) {
+      const end = {
+        x: values.has('X') ? (distanceMode === 'incremental' ? current.x + values.get('X')! : values.get('X')!) : current.x,
+        y: values.has('Y') ? (distanceMode === 'incremental' ? current.y + values.get('Y')! : values.get('Y')!) : current.y,
+      };
+      geometry = {
+        mode: motionMode,
+        start: { ...current },
+        end,
+        x: values.get('X'), y: values.get('Y'), i: values.get('I'), j: values.get('J'),
+        distanceMode, arcCenterMode,
+      };
+      current = end;
+    }
+
+    const comments = sourceComments(rawSourceLine);
+    const boundary = executable === '%' || mCodes.some(code => code === 2 || code === 30);
+    const recognizedLetters = new Set(['G', 'M', 'F', 'X', 'Y', 'I', 'J']);
+    const controllerSpecific = words.some(word => !recognizedLetters.has(word[1].toUpperCase()));
+    let type: ProgramEventType = 'empty';
+    if (boundary) type = 'program-boundary';
+    else if (geometry) type = 'motion';
+    else if (mCodes.length) type = 'process';
+    else if (values.has('F')) type = 'feed';
+    else if (gCodes.length) type = 'state';
+    else if (controllerSpecific || executable) type = 'controller-command';
+    else if (comments.length) type = 'comment';
+
+    events.push({
+      order: events.length,
+      sourceLine,
+      rawSourceLine,
+      executable,
+      comments,
+      type,
+      gCodes,
+      mCodes,
+      feed: values.get('F'),
+      geometry,
+      motionState: { distanceMode, arcCenterMode, motionMode, units },
+      processState: { activity: 'unknown', observedMCodes: [...observedMCodes] },
+    });
+  });
+  return events;
+}
+
+export function reconstructProgramStructure(
+  lines: readonly string[],
+  interpreter?: ControllerBoundaryInterpreter,
+): ProgramStructure {
+  const events = parseProgramEvents(lines);
+  if (!interpreter) return {
+    status: 'unsupported',
+    reason: 'No verified controller-family boundary profile is available.',
+    parts: [], contours: [], events,
+  };
+  const result = interpreter.reconstruct(events);
+  if (result.status === 'unsupported') return {
+    status: 'unsupported', controllerProfileId: interpreter.id, reason: result.reason,
+    parts: [], contours: [], events,
+  };
+  const ownedEvents = events.map(event => ({ ...event }));
+  for (const part of result.parts) {
+    for (const order of part.orderedEventOrders) {
+      const event = ownedEvents[order];
+      if (!event || (event.programPartId && event.programPartId !== part.id)) return {
+        status: 'unsupported', controllerProfileId: interpreter.id,
+        reason: 'Controller profile returned invalid or overlapping part ownership.',
+        parts: [], contours: [], events,
+      };
+      event.programPartId = part.id;
+    }
+    for (const contour of part.contours) {
+      for (const order of contour.eventOrders) {
+        const event = ownedEvents[order];
+        if (!event || event.programPartId !== part.id || (event.contourId && event.contourId !== contour.id)) return {
+          status: 'unsupported', controllerProfileId: interpreter.id,
+          reason: 'Controller profile returned invalid contour ownership.',
+          parts: [], contours: [], events,
+        };
+        event.contourId = contour.id;
+      }
+    }
+  }
+  return { status: 'verified', controllerProfileId: interpreter.id, parts: result.parts, contours: result.contours, events: ownedEvents };
+}
+
+export function interpretStructuredToolpath(lines: string[], structure: ProgramStructure): InterpretedPoint[] {
+  return interpretToolpath(lines).map(point => {
+    if (point.eventIndex === undefined) return point;
+    const event = structure.events[point.eventIndex];
+    return event ? { ...point, programPartId: event.programPartId, contourId: event.contourId } : point;
+  });
+}
+
 type EditableWord = 'G' | 'X' | 'Y' | 'I' | 'J';
 
 export function readSourceLineValues(line: string): Partial<Record<EditableWord, string>> {
@@ -270,7 +492,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       const radius = Math.hypot(current.x - center.x, current.y - center.y);
 
       if (!hasCenter || radius === 0) {
-        points.push({ ...end, line: lineIndex, mode: movementMode, ...semantics, pierce: isPierce, commandEnd: true });
+        points.push({ ...end, line: lineIndex, eventIndex: lineIndex, mode: movementMode, ...semantics, pierce: isPierce, commandEnd: true });
         current = end;
         continue;
       }
@@ -292,6 +514,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
           x: center.x + Math.cos(angle) * radius,
           y: center.y + Math.sin(angle) * radius,
           line: lineIndex,
+          eventIndex: lineIndex,
           mode: movementMode,
           ...semantics,
           pierce: isPierce && step === 1,
@@ -305,7 +528,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
     const isPierce = movementMode === 'G01' && needsPierce;
     if (movementMode === 'G00') needsPierce = true;
     if (movementMode === 'G01') needsPierce = false;
-    points.push({ ...end, line: lineIndex, mode: movementMode, ...motionSemantics(movementMode), pierce: isPierce, commandEnd: true });
+    points.push({ ...end, line: lineIndex, eventIndex: lineIndex, mode: movementMode, ...motionSemantics(movementMode), pierce: isPierce, commandEnd: true });
     current = end;
   }
 
