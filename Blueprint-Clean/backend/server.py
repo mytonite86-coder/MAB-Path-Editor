@@ -40,6 +40,15 @@ from checkout_attribution import (
     normalize_checkout_attribution,
 )
 from subscription_policy import has_any_entitlement, subscription_access_action
+from activation_codes import (
+    generate_activation_code,
+    hash_activation_code,
+    validate_activation_code,
+    redeem_activation_code,
+    ensure_activation_indexes,
+    get_pending_redemption,
+    mark_activation_complete,
+)
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
 from svg_subscription import (
@@ -58,6 +67,13 @@ db = client[os.environ["DB_NAME"]]
 
 # Collections
 users_collection = db.users
+
+activation_codes_collection = db.activation_codes
+
+from pydantic import BaseModel, Field
+
+class RedeemActivationRequest(BaseModel):
+    code: str = Field(min_length=37, max_length=37)
 
 payment_transactions_collection = db.payment_transactions
 
@@ -469,6 +485,8 @@ async def apply_premium_upgrade(
 
     if update_result.modified_count == 0:
         return True
+
+
 
     await grant_product_entitlement(
         user_id,
@@ -971,14 +989,66 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 # --------------------- PREMIUM ENDPOINTS ---------------------
 
 
+
 @api_router.post("/premium/activate")
 async def activate_premium(
-    request: dict, current_user: dict = Depends(get_current_user)
+    request: RedeemActivationRequest,
+    current_user: dict = Depends(get_current_user),
 ):
-    raise HTTPException(
-        status_code=501,
-        detail="Premium activation endpoint not implemented",
+    code = request.code.strip().upper()
+    user_id = current_user["user_id"]
+
+    if not validate_activation_code(code):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid activation code.",
+        )
+
+    code_hash = hash_activation_code(code)
+
+    redemption = await get_pending_redemption(
+        activation_codes_collection, code, user_id
     )
+
+    if redemption is None:
+        redemption = await redeem_activation_code(
+            activation_codes_collection, code, user_id
+        )
+
+    if redemption is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Code is invalid, already used, or unavailable.",
+        )
+    if redemption.get("entitlement_status") == "complete":
+        user = await users_collection.find_one(
+            {"_id": ObjectId(user_id)}
+        )
+        if user and "mab_s1" in (user.get("entitlements") or []):
+            return {
+                "success": True,
+                "product_id": "mab_s1",
+                "message": "Your M.A.B. S1 license is already active.",
+            }
+
+
+    await grant_product_entitlement(user_id, "mab_s1")
+
+    completed = await mark_activation_complete(
+        activation_codes_collection, code_hash, user_id
+    )
+
+    if not completed:
+        raise HTTPException(
+            status_code=503,
+            detail="License granted, but confirmation is pending. Please retry.",
+        )
+
+    return {
+        "success": True,
+        "product_id": "mab_s1",
+        "message": "M.A.B. S1 license activated successfully.",
+    }
 
 @api_router.get("/payments/packages", response_model=List[PaymentPackageResponse])
 async def get_payment_packages():
