@@ -90,3 +90,51 @@ def test_single_use_and_recovery():
         assert completed["entitlement_status"] == "complete"
 
     asyncio.run(scenario())
+
+
+def test_shopify_issuance_retry_recovers_same_code(monkeypatch):
+    from cryptography.fernet import Fernet
+    from activation_codes import issue_shopify_activation_code
+
+    monkeypatch.setenv(
+        "MAB_ACTIVATION_ENCRYPTION_KEY",
+        Fernet.generate_key().decode(),
+    )
+
+    class FakeShopifyCollection:
+        def __init__(self):
+            self.records = []
+
+        async def find_one(self, query):
+            for record in self.records:
+                if all(record.get(k) == v for k, v in query.items()):
+                    return record.copy()
+            return None
+
+        async def insert_one(self, record):
+            if any(
+                r["shopify_license_key"] == record["shopify_license_key"]
+                for r in self.records
+            ):
+                raise AssertionError("Duplicate license issued")
+            self.records.append(record.copy())
+
+    async def scenario():
+        collection = FakeShopifyCollection()
+
+        first = await issue_shopify_activation_code(
+            collection, "skald-kreepy-productions.myshopify.com",
+            "test-order-123",
+        )
+        second = await issue_shopify_activation_code(
+            collection, "skald-kreepy-productions.myshopify.com",
+            "test-order-123",
+        )
+
+        assert first["created"] is True
+        assert second["created"] is False
+        assert first["code"] == second["code"]
+        assert len(collection.records) == 1
+
+    asyncio.run(scenario())
+
