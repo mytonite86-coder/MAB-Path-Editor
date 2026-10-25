@@ -146,23 +146,41 @@ const handleSubscribe = async () => {
 };
 
 
-  return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>M.A.B. S1.5 ACCESS</Text>
-      <Text style={styles.subtitle}>Activate an existing license or purchase permanent access.</Text>
-      {isPro && <Text style={styles.activeNotice}>✓ Your M.A.B. S1 access is already active.</Text>}
+  const compact = width < 720;
 
-      <View style={[styles.optionRow, width < 660 && styles.optionStack]}>
-        <View style={[styles.optionCard, width < 660 && styles.optionCardStack]} testID="mab-activation-card">
-          <Text style={styles.optionIcon}>✦</Text>
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.heading}>
+        <Text style={[styles.title, compact && styles.compactTitle]}>
+          <Text style={styles.brandWhite}>M.A.B. </Text>
+          <Text style={styles.brandOrange}>S1.5 </Text>
+          <Text style={styles.brandWhite}>ACCESS</Text>
+        </Text>
+        <Text style={styles.subtitle}>
+          Activate your existing license or purchase permanent access.
+        </Text>
+        {isPro && <Text style={styles.activeNotice}>✓ Your M.A.B. S1 access is already active.</Text>}
+      </View>
+
+      <View style={[styles.optionRow, compact && styles.optionStack]}>
+        <View
+          style={[styles.optionCard, compact ? styles.compactCard : styles.desktopCard]}
+          testID="mab-activation-card"
+        >
           <Text style={styles.optionTitle}>Activate Access</Text>
-          <Text style={styles.optionDescription}>Purchased through Shopify? Enter the code from your email.</Text>
+          <Text style={styles.optionDescription}>
+            Bought M.A.B. through Shopify? Enter the license code from your email.
+          </Text>
           <TextInput
             style={styles.codeInput}
             value={activationCode}
             onChangeText={setActivationCode}
             placeholder="MAB1-..."
-            placeholderTextColor="#A6A6A6"
+            placeholderTextColor="#999999"
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={37}
@@ -181,11 +199,15 @@ const handleSubscribe = async () => {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.optionCard, width < 660 && styles.optionCardStack]} testID="mab-purchase-card">
-          <Text style={styles.optionIcon}>◆</Text>
+        <View
+          style={[styles.optionCard, compact ? styles.compactCard : styles.desktopCard]}
+          testID="mab-purchase-card"
+        >
           <Text style={styles.optionTitle}>Purchase Access</Text>
           <Text style={styles.price}>$30.00</Text>
-          <Text style={styles.optionDescription}>One-time payment. Permanent M.A.B. S1 access.</Text>
+          <Text style={styles.optionDescription}>
+            One-time payment. Permanent M.A.B. S1 access. No subscription.
+          </Text>
           <TouchableOpacity
             style={styles.goldButton}
             onPress={isPro ? () => showMessage('Already unlocked', 'Your M.A.B. S1 access is already active.') : handleSubscribe}
@@ -204,92 +226,107 @@ const handleSubscribe = async () => {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
   container: {
     flexGrow: 1,
-    backgroundColor: '#050505',
+    backgroundColor: '#000000',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    paddingVertical: 48,
+    paddingHorizontal: 20,
+    paddingTop: 42,
+    paddingBottom: 28,
+  },
+  heading: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 28,
   },
   title: {
-    color: '#D9B65D',
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 12,
+  },
+  compactTitle: {
+    fontSize: 25,
+  },
+  brandWhite: {
+    color: '#FFFFFF',
+  },
+  brandOrange: {
+    color: '#FF8C1A',
   },
   subtitle: {
-    color: '#D8D0BC',
+    color: '#CCCCCC',
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 32,
+    marginTop: 12,
   },
   activeNotice: {
-    color: '#E4CF9A',
+    color: '#FFFFFF',
     fontWeight: '700',
-    marginBottom: 22,
+    marginTop: 12,
     textAlign: 'center',
   },
   optionRow: {
     width: '100%',
-    maxWidth: 900,
+    maxWidth: 960,
     flexDirection: 'row',
-    gap: 20,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'stretch',
   },
   optionStack: {
     flexDirection: 'column',
+    alignItems: 'center',
   },
   optionCard: {
-    flex: 1,
-    minWidth: 0,
-    padding: 24,
-    gap: 12,
-    backgroundColor: '#101010',
-    borderColor: '#B9933C',
+    backgroundColor: '#111111',
+    borderColor: '#505050',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 12,
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'flex-start',
   },
-  optionCardStack: {
-    flex: 0,
+  desktopCard: {
+    width: '48.5%',
+    minHeight: 290,
+  },
+  compactCard: {
     width: '100%',
-  },
-  optionIcon: {
-    color: '#D9B65D',
-    fontSize: 32,
+    marginBottom: 16,
   },
   optionTitle: {
-    color: '#F1D38A',
-    fontSize: 20,
+    color: '#FFFFFF',
+    fontSize: 21,
     fontWeight: '700',
     textAlign: 'center',
+    marginBottom: 12,
   },
   optionDescription: {
-    color: '#C8BEA6',
-    fontSize: 14,
+    color: '#C7C7C7',
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
-    minHeight: 44,
+    marginBottom: 18,
   },
   codeInput: {
     width: '100%',
-    padding: 14,
-    backgroundColor: '#1B1B1B',
+    backgroundColor: '#202020',
     color: '#FFFFFF',
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#62502B',
+    borderColor: '#555555',
     borderRadius: 8,
     fontSize: 15,
-    marginTop: 12,
+    marginTop: 4,
+    marginBottom: 18,
   },
   price: {
-    color: '#F1D38A',
+    color: '#FF8C1A',
     fontSize: 34,
     fontWeight: '800',
-    marginTop: 10,
+    marginBottom: 14,
   },
   goldButton: {
     width: '100%',
@@ -297,7 +334,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 16,
     paddingHorizontal: 12,
-    marginTop: 'auto',
     alignItems: 'center',
   },
   buttonDisabled: {
@@ -309,15 +345,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   footerText: {
-    color: '#AD9A73',
+    color: '#999999',
     fontSize: 13,
-    marginTop: 28,
+    marginTop: 24,
     textAlign: 'center',
   },
   copyright: {
-    color: '#666',
+    color: '#666666',
     fontSize: 12,
-    marginTop: 32,
+    marginTop: 26,
     textAlign: 'center',
   },
 });
