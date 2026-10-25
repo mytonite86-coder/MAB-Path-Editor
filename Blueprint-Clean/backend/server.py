@@ -389,7 +389,7 @@ ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID = os.environ.get(
 SETTLED_PAYMENT_STATUSES = {"paid", "no_payment_required"}
 MAB_SUBSCRIPTION_ENTITLEMENT = "mab_s1_subscription"
 MAB_PERMANENT_ENTITLEMENTS = {
-    "mab_s1",
+    "mab_s1.5",
     "founder_lifetime",
     "complimentary_lifetime",
     ALL_PRODUCTS_LIFETIME_ENTITLEMENT,
@@ -401,8 +401,8 @@ SUCCESSFUL_CHECKOUT_EVENTS = {
 
 PREMIUM_PACKAGES = {
     "mab_s1_payment": {
-        "package_id": "mab_s1_payment",
-        "product_id": "mab_s1",
+        "package_id": "mab_s1.5_payment",
+        "product_id": "mab_s1.5",
         "name": "M.A.B. S1.5",
         "description": (
             "Mobile CNC path editing, lightweight nesting, and supported combined export."
@@ -1435,7 +1435,7 @@ async def create_checkout_session(
     session = stripe.checkout.Session.create(
         allow_promotion_codes=True,
 
-        payment_method_collection="if_required",
+       
         
         mode=package["billing_mode"],
         line_items=[
