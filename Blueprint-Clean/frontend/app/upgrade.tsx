@@ -11,7 +11,6 @@ import {
   View,
   ScrollView,
   TextInput,
-  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '@/config/api';
@@ -21,7 +20,6 @@ export default function Upgrade() {
   const router = useRouter();
 
   const { refreshUser, isPro } = useAuth();
-  const { width } = useWindowDimensions();
   const [activationCode, setActivationCode] = useState('');
   const [activating, setActivating] = useState(false);
 
@@ -146,8 +144,6 @@ const handleSubscribe = async () => {
 };
 
 
-  const compact = width < 720;
-
   return (
     <ScrollView
       style={styles.screen}
@@ -155,7 +151,7 @@ const handleSubscribe = async () => {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.heading}>
-        <Text style={[styles.title, compact && styles.compactTitle]}>
+        <Text style={styles.title}>
           <Text style={styles.brandWhite}>M.A.B. </Text>
           <Text style={styles.brandOrange}>S1.5 </Text>
           <Text style={styles.brandWhite}>ACCESS</Text>
@@ -166,9 +162,9 @@ const handleSubscribe = async () => {
         {isPro && <Text style={styles.activeNotice}>✓ Your M.A.B. S1 access is already active.</Text>}
       </View>
 
-      <View style={[styles.optionRow, compact && styles.optionStack]}>
+      <View style={styles.optionRow}>
         <View
-          style={[styles.optionCard, compact ? styles.compactCard : styles.desktopCard]}
+          style={styles.optionCard}
           testID="mab-activation-card"
         >
           <Text style={styles.optionTitle}>Activate Access</Text>
@@ -200,7 +196,7 @@ const handleSubscribe = async () => {
         </View>
 
         <View
-          style={[styles.optionCard, compact ? styles.compactCard : styles.desktopCard]}
+          style={styles.optionCard}
           testID="mab-purchase-card"
         >
           <Text style={styles.optionTitle}>Purchase Access</Text>
@@ -248,9 +244,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-  compactTitle: {
-    fontSize: 25,
-  },
   brandWhite: {
     color: '#FFFFFF',
   },
@@ -273,28 +266,23 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 960,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'stretch',
-  },
-  optionStack: {
-    flexDirection: 'column',
-    alignItems: 'center',
+    gap: 18,
   },
   optionCard: {
+    flexBasis: 400,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 280,
+    minHeight: 290,
     backgroundColor: '#111111',
     borderColor: '#505050',
     borderWidth: 1,
     borderRadius: 12,
     padding: 24,
     alignItems: 'center',
-  },
-  desktopCard: {
-    width: '48.5%',
-    minHeight: 290,
-  },
-  compactCard: {
-    width: '100%',
-    marginBottom: 16,
   },
   optionTitle: {
     color: '#FFFFFF',
