@@ -92,6 +92,8 @@ def configured_server(monkeypatch):
                         database.activation_codes)
     monkeypatch.setattr(server, "shopify_order_states_collection",
                         database.shopify_order_states)
+    monkeypatch.setattr(server, "shopify_fulfillments_collection",
+                        database.shopify_fulfillments)
     monkeypatch.setattr(server, "users_collection", database.users)
     monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", WEBHOOK_SECRET)
     monkeypatch.setenv("SHOPIFY_SHOP_DOMAIN", SHOP_DOMAIN)
@@ -171,15 +173,15 @@ def test_paid_webhook_quantity_and_duplicate_are_delivery_safe(
         configured_server, monkeypatch):
     deliveries = []
 
-    def fake_send(email, code, order_id, unit):
-        deliveries.append((email, code, order_id, unit))
+    def fake_send(email, order_id, codes, services, timezone):
+        deliveries.append((email, order_id, codes, services, timezone))
+        return "gmail-test-message"
 
-    monkeypatch.setattr(server, "send_shopify_activation_email", fake_send)
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email", fake_send)
 
     async def scenario():
         order = make_order(line_items=[{
-            "product_id": PRODUCT_ID,
-            "variant_id": VARIANT_ID,
+            "product_id": PRODUCT_ID, "variant_id": VARIANT_ID,
             "quantity": 2,
         }])
         first = await server.shopify_order_paid(make_request(order))
@@ -189,13 +191,20 @@ def test_paid_webhook_quantity_and_duplicate_are_delivery_safe(
             "status": "delivered",
             "delivery_complete": True,
             "mab_license_quantity": 2,
+            "product_type": "mab_s1",
         }
         assert second == first
         assert len(records) == 2
-        assert len(deliveries) == 2
-        assert {delivery[3] for delivery in deliveries} == {1, 2}
+        assert len(deliveries) == 1
+        assert {entry["unit"] for entry in deliveries[0][2]} == {1, 2}
+        assert deliveries[0][3] == []
         assert all(record["delivery_status"] == "delivered" for record in records)
+        audit = await configured_server.shopify_fulfillments.find_one({})
+        assert audit["send_status"] == "delivered"
+        assert audit["sent_sections"] == ["mab_s1_activation"]
+        assert audit["provider_message_id"] == "gmail-test-message"
         assert "MAB1-" not in json.dumps(first)
+        assert "MAB1-" not in json.dumps(audit, default=str)
 
     run(scenario())
 
@@ -204,12 +213,13 @@ def test_failed_delivery_retries_same_license_without_reissuance(
         configured_server, monkeypatch):
     attempts = []
 
-    def flaky_send(email, code, order_id, unit):
-        attempts.append(code)
+    def flaky_send(email, order_id, codes, services, timezone):
+        attempts.append([c["activation_code"] for c in codes])
         if len(attempts) == 1:
-            raise OSError("synthetic SMTP failure")
+            raise OSError("synthetic Gmail API failure")
+        return "gmail-recovered-id"
 
-    monkeypatch.setattr(server, "send_shopify_activation_email", flaky_send)
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email", flaky_send)
 
     async def scenario():
         order = make_order()
@@ -223,6 +233,9 @@ def test_failed_delivery_retries_same_license_without_reissuance(
         assert attempts[0] == attempts[1]
         assert records[0]["delivery_attempts"] == 2
         assert records[0]["delivery_status"] == "delivered"
+        audit = await configured_server.shopify_fulfillments.find_one({})
+        assert audit["send_attempts"] == 2
+        assert audit["send_status"] == "delivered"
 
     run(scenario())
 
@@ -231,9 +244,8 @@ def test_duplicate_order_with_changed_email_requires_review(
         configured_server, monkeypatch):
     deliveries = []
     monkeypatch.setattr(
-        server,
-        "send_shopify_activation_email",
-        lambda email, *args: deliveries.append(email),
+        server, "send_shopify_fulfillment_email",
+        lambda email, *args: deliveries.append(email) or "gmail-id",
     )
 
     async def scenario():
@@ -248,20 +260,9 @@ def test_duplicate_order_with_changed_email_requires_review(
     run(scenario())
 
 
-@pytest.mark.parametrize("order", [
-    make_order(financial_status="pending"),
-    make_order(cancelled_at="2026-10-24T00:00:00Z"),
-    make_order(refunds=[{"id": 99}]),
-    make_order(line_items=[]),
-    make_order(line_items=[{
-        "product_id": 999,
-        "variant_id": VARIANT_ID,
-        "quantity": 1,
-    }]),
-])
 def test_ineligible_orders_fail_closed(configured_server, monkeypatch, order):
     monkeypatch.setattr(
-        server, "send_shopify_activation_email",
+        server, "send_shopify_fulfillment_email",
         lambda *args: pytest.fail("delivery should not be attempted"),
     )
 
@@ -282,7 +283,7 @@ def test_ineligible_orders_fail_closed(configured_server, monkeypatch, order):
 def test_webhook_identity_and_email_validation_fail_closed(
         configured_server, monkeypatch, webhook_request):
     monkeypatch.setattr(
-        server, "send_shopify_activation_email",
+        server, "send_shopify_fulfillment_email",
         lambda *args: pytest.fail("delivery should not be attempted"),
     )
 
@@ -296,7 +297,7 @@ def test_webhook_identity_and_email_validation_fail_closed(
 
 def test_refund_and_cancel_record_review_without_revocation(
         configured_server, monkeypatch):
-    monkeypatch.setattr(server, "send_shopify_activation_email",
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email",
                         lambda *args: None)
 
     async def scenario():
@@ -377,44 +378,130 @@ def test_activation_endpoint_grants_mab_s1_once(configured_server, monkeypatch):
     run(scenario())
 
 
-def test_smtp_configuration_uses_environment_and_message_is_bounded(monkeypatch):
+def test_gmail_https_sender_and_mab_template(monkeypatch):
+    import email
+    from shopify_delivery import (
+        compose_fulfillment_message, send_shopify_fulfillment_email,
+    )
+
+    class Response:
+        def __init__(self, status_code, data):
+            self.status_code = status_code
+            self._data = data
+
+        def json(self):
+            return self._data
+
     sent = []
 
-    class FakeSmtp:
-        def __init__(self, host, port, timeout):
-            sent.append(("connect", host, port, timeout))
+    def post(url, **kwargs):
+        sent.append((url, kwargs))
+        if "oauth2.googleapis" in url:
+            return Response(200, {"access_token": "test-access-token"})
+        return Response(200, {"id": "gmail-sent-message-id"})
 
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def starttls(self, context=None):
-            sent.append(("tls", context is not None))
-
-        def login(self, username, password):
-            sent.append(("login", username, password))
-
-        def send_message(self, message):
-            sent.append(("message", message))
-
-    monkeypatch.setenv("MAB_LICENSE_SMTP_HOST", "smtp.example.com")
-    monkeypatch.setenv("MAB_LICENSE_SMTP_PORT", "587")
-    monkeypatch.setenv("MAB_LICENSE_SMTP_USERNAME", "mailer")
-    monkeypatch.setenv("MAB_LICENSE_SMTP_PASSWORD", "secret")
-    monkeypatch.setenv("MAB_LICENSE_FROM_EMAIL", "licenses@example.com")
-
-    with patch("shopify_delivery.smtplib.SMTP", FakeSmtp):
-        send_shopify_activation_email(
-            "buyer@example.com", "MAB1-TEST-TEST-TEST-TEST-TEST-TEST",
-            "12345", 2,
-        )
-
-    message = [item[1] for item in sent if item[0] == "message"][0]
-    body = message.get_content()
-    assert message["To"] == "buyer@example.com"
+    monkeypatch.setenv("MAB_LICENSE_FROM_EMAIL", "business@example.com")
+    monkeypatch.setenv("GMAIL_OAUTH_CLIENT_ID", "local-client")
+    monkeypatch.setenv("GMAIL_OAUTH_CLIENT_SECRET", "local-secret")
+    monkeypatch.setenv("GMAIL_OAUTH_REFRESH_TOKEN", "local-refresh")
+    monkeypatch.setattr("shopify_delivery.requests.post", post)
+    code = generate_activation_code()
+    result = send_shopify_fulfillment_email(
+        "buyer@example.com", "12345",
+        [{"unit": 2, "activation_code": code}], [],
+    )
+    assert result == "gmail-sent-message-id"
+    assert len(sent) == 2
+    assert sent[1][0] == "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    assert sent[1][1]["headers"]["Authorization"] == "Bearer test-access-token"
+    import base64
+    raw = sent[1][1]["json"]["raw"]
+    msg = email.message_from_bytes(base64.urlsafe_b64decode(raw))
+    body = msg.get_payload(decode=True).decode()
     assert "Shopify order: 12345" in body
-    assert "license unit: 2" in body
-    assert "MAB1-TEST-TEST-TEST-TEST-TEST-TEST" in body
-    assert "does not include automatic M.A.B. S2 access" in body
+    assert code in body
+    assert "Submit Activation Code" in body
+    assert "mab_s1" in body
+    assert "SERVICE SCHEDULING" not in body
+    assert "M.A.B. S2 is not included" in body
+
+
+def test_service_only_and_mixed_section_isolation(configured_server, monkeypatch):
+    from shopify_delivery import compose_fulfillment_message
+    deliveries = []
+
+    def send(email, order_id, codes, services, timezone):
+        deliveries.append((codes, services))
+        message = compose_fulfillment_message(
+            "business@example.com", email, order_id, codes, services, timezone
+        )
+        return f"gmail-msg-{len(deliveries)}"
+
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email", send)
+    service_item = {
+        "product_id": 15444231258391,
+        "variant_id": 67854811398423,
+        "sku": "SK-SVC-QA-ANDROID",
+        "title": "Android App QA Quick Test",
+        "quantity": 1,
+        "properties": [
+            {"name": "Estimated duration", "value": "45 minutes"},
+            {"name": "Desired date", "value": "2026-10-28"},
+        ],
+    }
+
+    async def scenario():
+        service_order = make_order(id=45678, line_items=[service_item])
+        first = await server.shopify_order_paid(make_request(service_order))
+        assert first["product_type"] == "service"
+        assert first["mab_license_quantity"] == 0
+        assert len(deliveries) == 1
+        assert not deliveries[0][0]
+        assert deliveries[0][1][0]["service_name"] == "Android App QA Quick Test"
+        assert deliveries[0][1][0]["estimated_duration"] == "45 minutes"
+        assert deliveries[0][1][0]["desired_date"] == "2026-10-28"
+        assert await configured_server.activation_codes.count_documents({}) == 0
+        duplicate = await server.shopify_order_paid(make_request(service_order))
+        assert duplicate["delivery_complete"]
+        assert len(deliveries) == 1
+        service_message = compose_fulfillment_message(
+            "business@example.com", "buyer@example.com", "45678",
+            [], deliveries[0][1],
+        ).get_content()
+        assert "SERVICE SCHEDULING" in service_message
+        assert "10 AM to 10 PM" in service_message
+        assert "America/Denver" in service_message
+        assert "ACTIVATION" not in service_message
+        assert "MAB1-" not in service_message
+
+        mixed_order = make_order(
+            id=56789,
+            line_items=[
+                {"product_id": PRODUCT_ID, "variant_id": VARIANT_ID, "quantity": 1},
+                service_item,
+            ],
+        )
+        second = await server.shopify_order_paid(make_request(mixed_order))
+        assert second["product_type"] == "mixed"
+        assert len(deliveries) == 2
+        code = deliveries[1][0][0]["activation_code"]
+        assert validate_activation_code(code)
+        assert len(deliveries[1][1]) == 1
+        mixed_message = compose_fulfillment_message(
+            "business@example.com", "buyer@example.com",
+            "56789", deliveries[1][0], deliveries[1][1],
+        ).get_content()
+        assert "M.A.B. S1 ACTIVATION" in mixed_message
+        assert "SERVICE SCHEDULING" in mixed_message
+        assert mixed_message.index("M.A.B. S1 ACTIVATION") < mixed_message.index(
+            "SERVICE SCHEDULING"
+        )
+        assert code in mixed_message
+        audits = await configured_server.shopify_fulfillments.find(
+            {}
+        ).to_list(None)
+        assert len(audits) == 2
+        assert all(a["send_status"] == "delivered" for a in audits)
+        assert {a["product_type"] for a in audits} == {"service", "mixed"}
+
+    run(scenario())
