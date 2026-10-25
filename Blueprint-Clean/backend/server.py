@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
 import os
 import hmac
 import logging
@@ -41,13 +42,28 @@ from checkout_attribution import (
 )
 from subscription_policy import has_any_entitlement, subscription_access_action
 from activation_codes import (
-    generate_activation_code,
+    SHOPIFY_MAB_PRODUCT_ID,
+    SHOPIFY_MAB_VARIANT_ID,
+    claim_shopify_activation_delivery,
+    decrypt_delivery_code,
     hash_activation_code,
     validate_activation_code,
     redeem_activation_code,
     ensure_activation_indexes,
+    ensure_shopify_order_state_indexes,
+    get_shopify_order_state,
     get_pending_redemption,
+    issue_shopify_activation_code,
     mark_activation_complete,
+    mark_shopify_activation_delivered,
+    mark_shopify_activation_delivery_failed,
+    record_shopify_order_state,
+    shopify_license_key,
+    verify_shopify_webhook,
+)
+from shopify_delivery import (
+    normalize_shopify_customer_email,
+    send_shopify_activation_email,
 )
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
@@ -69,6 +85,7 @@ db = client[os.environ["DB_NAME"]]
 users_collection = db.users
 
 activation_codes_collection = db.activation_codes
+shopify_order_states_collection = db.shopify_order_states
 
 from pydantic import BaseModel, Field
 
@@ -82,6 +99,278 @@ app = FastAPI(title="CAD Blueprint API")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+async def verified_shopify_webhook(request: Request, expected_topic: str):
+    """Verify a Shopify webhook before returning its payload and shop."""
+    raw_body = await request.body()
+    signature = request.headers.get("X-Shopify-Hmac-Sha256", "")
+    webhook_secret = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
+
+    if not verify_shopify_webhook(raw_body, signature, webhook_secret):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Shopify webhook signature.",
+        )
+
+    webhook_topic = request.headers.get("X-Shopify-Topic", "").strip().lower()
+
+    if webhook_topic != expected_topic:
+        raise HTTPException(
+            status_code=400,
+            detail="Unexpected Shopify webhook topic.",
+        )
+
+    try:
+        payload = await request.json()
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Shopify webhook JSON.",
+        )
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Shopify webhook payload.")
+
+    shop_domain = request.headers.get("X-Shopify-Shop-Domain", "").strip().lower()
+    allowed_shop = os.environ.get(
+        "SHOPIFY_SHOP_DOMAIN",
+        "vd1k2v-ew.myshopify.com",
+    ).strip().lower()
+
+    if not allowed_shop or not hmac.compare_digest(shop_domain, allowed_shop):
+        raise HTTPException(
+            status_code=403,
+            detail="Unrecognized Shopify store.",
+        )
+    return payload, shop_domain
+
+
+def require_shopify_order_id(payload: dict, field: str = "id") -> str:
+    order_id = str(payload.get(field) or "")
+    if not order_id.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid Shopify order ID.")
+    return order_id
+
+
+def mab_license_quantity(order: dict) -> int:
+    quantity = 0
+    line_items = order.get("line_items")
+    if not isinstance(line_items, list):
+        raise HTTPException(status_code=400, detail="Invalid Shopify line items.")
+
+    for item in line_items:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="Invalid Shopify line item.")
+        is_mab = (
+            str(item.get("product_id")) == SHOPIFY_MAB_PRODUCT_ID
+            and str(item.get("variant_id")) == SHOPIFY_MAB_VARIANT_ID
+        )
+        if not is_mab:
+            continue
+        item_quantity = item.get("quantity")
+        if type(item_quantity) is not int or item_quantity < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid M.A.B. license quantity.",
+            )
+        quantity += item_quantity
+    return quantity
+
+
+async def deliver_shopify_license(
+    shop_domain: str,
+    order_id: str,
+    unit: int,
+) -> str:
+    """Claim and deliver one code, or reuse an already-completed delivery."""
+    license_key = shopify_license_key(shop_domain, order_id, unit)
+    record = await claim_shopify_activation_delivery(
+        activation_codes_collection,
+        license_key,
+    )
+    if record is None:
+        existing = await activation_codes_collection.find_one({
+            "shopify_license_key": license_key,
+        })
+        if existing and existing.get("delivery_status") == "delivered":
+            return "already_delivered"
+        return "delivery_in_progress"
+
+    hold = await get_shopify_order_state(
+        shopify_order_states_collection,
+        shop_domain,
+        order_id,
+    )
+    if hold and hold.get("state") in {"cancelled", "refunded"}:
+        await mark_shopify_activation_delivery_failed(
+            activation_codes_collection,
+            license_key,
+            reason="commerce_review_required",
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Order requires commerce review before delivery.",
+        )
+
+    try:
+        code = decrypt_delivery_code(record["encrypted_delivery_code"])
+        await asyncio.to_thread(
+            send_shopify_activation_email,
+            record["delivery_email"],
+            code,
+            order_id,
+            unit,
+        )
+    except Exception:
+        await mark_shopify_activation_delivery_failed(
+            activation_codes_collection,
+            license_key,
+        )
+        logger.exception(
+            "M.A.B. activation delivery failed for a verified Shopify license."
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Activation delivery is temporarily unavailable.",
+        )
+
+    if not await mark_shopify_activation_delivered(
+        activation_codes_collection,
+        license_key,
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="Activation delivery confirmation is pending.",
+        )
+    return "delivered"
+
+
+@api_router.post("/shopify/webhooks/orders-paid")
+async def shopify_order_paid(request: Request):
+    """Issue and deliver licenses from a verified eligible paid order."""
+    order, shop_domain = await verified_shopify_webhook(request, "orders/paid")
+    order_id = require_shopify_order_id(order)
+
+    if str(order.get("financial_status") or "").lower() != "paid":
+        return {"status": "ignored", "reason": "not_paid"}
+
+    if order.get("cancelled_at") is not None:
+        return {
+            "status": "ignored",
+            "reason": "order_cancelled",
+        }
+
+    if order.get("refunds"):
+        return {
+            "status": "ignored",
+            "reason": "order_refunded",
+        }
+
+    hold = await get_shopify_order_state(
+        shopify_order_states_collection,
+        shop_domain,
+        order_id,
+    )
+    if hold and hold.get("state") in {"cancelled", "refunded"}:
+        return {"status": "ignored", "reason": "commerce_review_required"}
+
+    mab_quantity = mab_license_quantity(order)
+
+    if mab_quantity == 0:
+        return {"status": "ignored", "reason": "not_mab_order"}
+
+    try:
+        delivery_email = normalize_shopify_customer_email(order)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="A valid purchaser email is required for activation delivery.",
+        )
+
+    for unit in range(1, mab_quantity + 1):
+        await issue_shopify_activation_code(
+            activation_codes_collection,
+            shop_domain,
+            order_id,
+            unit=unit,
+            delivery_email=delivery_email,
+        )
+
+    results = []
+    for unit in range(1, mab_quantity + 1):
+        results.append(await deliver_shopify_license(shop_domain, order_id, unit))
+    return {
+        "status": "delivered",
+        "mab_license_quantity": mab_quantity,
+        "delivery_complete": all(
+            result in {"delivered", "already_delivered"} for result in results
+        ),
+    }
+
+
+async def record_shopify_commerce_hold(
+    shop_domain: str,
+    order_id: str,
+    state: str,
+):
+    await record_shopify_order_state(
+        shopify_order_states_collection,
+        shop_domain,
+        order_id,
+        state,
+    )
+    result = await activation_codes_collection.update_many(
+        {"shop_domain": shop_domain, "shopify_order_id": order_id},
+        {
+            "$set": {
+                "commerce_status": state,
+                "commerce_review_required": True,
+                "commerce_updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    return result.modified_count
+
+
+@api_router.post("/shopify/webhooks/orders-cancelled")
+async def shopify_order_cancelled(request: Request):
+    payload, shop_domain = await verified_shopify_webhook(
+        request,
+        "orders/cancelled",
+    )
+    order_id = require_shopify_order_id(payload)
+    affected = await record_shopify_commerce_hold(
+        shop_domain,
+        order_id,
+        "cancelled",
+    )
+    return {"status": "recorded", "licenses_flagged": affected}
+
+
+@api_router.post("/shopify/webhooks/refunds-create")
+async def shopify_refund_created(request: Request):
+    payload, shop_domain = await verified_shopify_webhook(
+        request,
+        "refunds/create",
+    )
+    order_id = require_shopify_order_id(payload, field="order_id")
+    refund_items = payload.get("refund_line_items") or []
+    mab_refund = any(
+        str((entry.get("line_item") or {}).get("product_id"))
+        == SHOPIFY_MAB_PRODUCT_ID
+        and str((entry.get("line_item") or {}).get("variant_id"))
+        == SHOPIFY_MAB_VARIANT_ID
+        for entry in refund_items
+        if isinstance(entry, dict)
+    )
+    if refund_items and not mab_refund:
+        return {"status": "ignored", "reason": "not_mab_refund"}
+    affected = await record_shopify_commerce_hold(
+        shop_domain,
+        order_id,
+        "refunded",
+    )
+    return {"status": "recorded", "licenses_flagged": affected}
+
 
 
 
@@ -1401,6 +1690,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def initialize_license_indexes():
+    """Create the uniqueness boundaries required for safe license handling."""
+    await ensure_activation_indexes(activation_codes_collection)
+    await ensure_shopify_order_state_indexes(shopify_order_states_collection)
 
 
 @app.on_event("shutdown")
