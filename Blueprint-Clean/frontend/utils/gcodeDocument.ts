@@ -1,7 +1,13 @@
+import { isAsciiDxf, parseDxfPreview } from './dxfPreview.ts';
+
 export type TextDocument = {
   lines: string[];
   endings: string[];
   hasUtf8Bom: boolean;
+  sourceKind?: 'controller-text' | 'dxf';
+  previewGeometry?: InterpretedPoint[];
+  unsupportedEntities?: Record<string, number>;
+  resolvedBlocks?: string[];
 };
 
 export type InterpretedPoint = {
@@ -11,7 +17,105 @@ export type InterpretedPoint = {
   mode?: 'G00' | 'G01' | 'G02' | 'G03';
   pierce?: boolean;
   commandEnd?: boolean;
+  role?: 'rapid' | 'cut';
+  geometry?: 'straight' | 'arc-cw' | 'arc-ccw';
+  breakBefore?: boolean;
+  /** Ordered program event that produced this preview geometry. */
+  eventIndex?: number;
+  /** Populated only after a verified controller profile proves ownership. */
+  programPartId?: string;
+  /** Populated only after a verified controller profile proves ownership. */
+  contourId?: string;
 };
+
+export type ProgramMotionState = {
+  distanceMode: 'absolute' | 'incremental';
+  arcCenterMode: 'absolute' | 'incremental';
+  motionMode?: InterpretedPoint['mode'];
+  units: 'inch' | 'millimeter' | 'unknown';
+};
+
+export type ProgramProcessState = {
+  /** Controller meaning is deliberately unknown until a verified profile supplies it. */
+  activity: 'unknown';
+  observedMCodes: number[];
+};
+
+export type ProgramGeometryRecord = {
+  mode: NonNullable<InterpretedPoint['mode']>;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  x?: number;
+  y?: number;
+  i?: number;
+  j?: number;
+  distanceMode: ProgramMotionState['distanceMode'];
+  arcCenterMode: ProgramMotionState['arcCenterMode'];
+};
+
+export type ProgramEventType =
+  | 'motion' | 'process' | 'feed' | 'state' | 'program-boundary'
+  | 'controller-command' | 'comment' | 'empty';
+
+export type ProgramEvent = {
+  order: number;
+  sourceLine: number;
+  rawSourceLine: string;
+  executable: string;
+  comments: string[];
+  type: ProgramEventType;
+  gCodes: number[];
+  mCodes: number[];
+  feed?: number;
+  geometry?: ProgramGeometryRecord;
+  motionState: ProgramMotionState;
+  processState: ProgramProcessState;
+  programPartId?: string;
+  contourId?: string;
+};
+
+export type SourceLineSpan = { start: number; end: number };
+
+export type ProgramContour = {
+  id: string;
+  ownership: 'verified';
+  kind: 'outer' | 'internal' | 'lead-in' | 'lead-out' | 'unknown';
+  eventOrders: number[];
+  sourceLineSpans: SourceLineSpan[];
+};
+
+export type ProgramPart = {
+  id: string;
+  ownership: 'verified';
+  contours: ProgramContour[];
+  processEventOrders: number[];
+  orderedEventOrders: number[];
+  sourceLineSpans: SourceLineSpan[];
+};
+
+export type ProgramStructure = {
+  status: 'verified' | 'unsupported';
+  controllerProfileId?: string;
+  reason?: string;
+  parts: ProgramPart[];
+  contours: ProgramContour[];
+  events: ProgramEvent[];
+};
+
+/** Controller-family implementations alone may assign part/contour ownership. */
+export interface ControllerBoundaryInterpreter {
+  readonly id: string;
+  reconstruct(events: readonly ProgramEvent[]):
+    | { status: 'unsupported'; reason: string }
+    | { status: 'verified'; parts: ProgramPart[]; contours: ProgramContour[] };
+}
+
+export function motionSemantics(mode: InterpretedPoint['mode']): Pick<InterpretedPoint, 'role' | 'geometry'> {
+  if (mode === 'G00') return { role: 'rapid', geometry: 'straight' };
+  if (mode === 'G02') return { role: 'cut', geometry: 'arc-cw' };
+  if (mode === 'G03') return { role: 'cut', geometry: 'arc-ccw' };
+  return { role: 'cut', geometry: 'straight' };
+}
 
 const UTF8_BOM = new Uint8Array([0xef, 0xbb, 0xbf]);
 
@@ -19,9 +123,8 @@ export function detectContainer(bytes: Uint8Array): 'text' | 'dwg' | 'binary' {
   const signature = new TextDecoder('ascii').decode(bytes.slice(0, 6));
   if (/^AC10\d{2}$/.test(signature)) return 'dwg';
 
-  const probeLength = Math.min(bytes.length, 8192);
-  for (let index = 0; index < probeLength; index += 1) {
-    if (bytes[index] === 0) return 'binary';
+  for (const byte of bytes) {
+    if ((byte < 32 && ![9, 10, 13].includes(byte)) || byte === 127) return 'binary';
   }
 
   return 'text';
@@ -38,9 +141,50 @@ export function decodeTextDocument(bytes: Uint8Array): TextDocument {
     bytes[1] === UTF8_BOM[1] &&
     bytes[2] === UTF8_BOM[2];
   const body = hasUtf8Bom ? bytes.slice(3) : bytes;
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch {
+    throw new Error('Unsupported text encoding. Only valid UTF-8 is supported; the source was not converted.');
+  }
 
   return parseTextDocument(text, hasUtf8Bom);
+}
+
+/** Content evidence, not an extension whitelist or controller-safety claim. */
+export function importControllerDocument(bytes: Uint8Array): TextDocument {
+  const container = detectContainer(bytes);
+  if (container === 'dwg') {
+    throw new Error('DWG container recognized, regardless of filename. Safe DWG editing/export is not enabled.');
+  }
+  if (container === 'binary') {
+    throw new Error('Binary data or unsupported encoding recognized. A verified round-trip codec is required.');
+  }
+  const document = decodeTextDocument(bytes);
+  const source = serializeTextDocument(document);
+  if (isAsciiDxf(source)) {
+    const preview = parseDxfPreview(source);
+    return { ...document, sourceKind: 'dxf', previewGeometry: preview.points, unsupportedEntities: preview.unsupportedEntities, resolvedBlocks: preview.resolvedBlocks };
+  }
+  if (!source.trim()) {
+    throw new Error('The selected file is empty; no controller program was found.');
+  }
+
+  let motionDeclared = false;
+  const numericWord = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
+  for (const line of document.lines) {
+    const code = executableCode(line).trim();
+    // Do not recognize words embedded in prose, config assignments or expressions.
+    if (!code || code.replace(numericWord, '').trim() !== '') continue;
+    const words = [...code.matchAll(numericWord)];
+    if (words.some(word => word[1].toUpperCase() === 'G' && [0, 1, 2, 3].includes(Number(word[2])))) {
+      motionDeclared = true;
+    }
+    if (motionDeclared && words.some(word => /^[XY]$/i.test(word[1]) && Number.isFinite(Number(word[2])))) {
+      return document;
+    }
+  }
+  throw new Error('No supported explicit G0–G3 / X–Y motion was recognized. Text alone does not establish a CNC program; the source is unchanged.');
 }
 
 export function parseTextDocument(text: string, hasUtf8Bom = false): TextDocument {
@@ -94,7 +238,197 @@ function codeBeforeComment(line: string): string {
 }
 
 function executableCode(line: string): string {
-  return codeBeforeComment(line).replace(/\([^)]*\)/g, ' ');
+  let depth = 0;
+  let tail = false;
+  return [...line].map(character => {
+    if (character === ';' && depth === 0) tail = true;
+    if (tail) return ' ';
+    if (character === '(') { depth += 1; return ' '; }
+    if (character === ')' && depth > 0) { depth -= 1; return ' '; }
+    return depth > 0 ? ' ' : character;
+  }).join('');
+}
+
+function sourceComments(line: string): string[] {
+  const comments = [...line.matchAll(/\(([^)]*)\)/g)].map(match => match[1]);
+  const semicolon = codeBeforeComment(line).length;
+  if (semicolon < line.length) comments.push(line.slice(semicolon + 1));
+  return comments;
+}
+
+const PROGRAM_WORD = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
+
+/** Preserve the ordered source program without assigning unverified manufacturing ownership. */
+export function parseProgramEvents(lines: readonly string[]): ProgramEvent[] {
+  const events: ProgramEvent[] = [];
+  let current = { x: 0, y: 0 };
+  let distanceMode: ProgramMotionState['distanceMode'] = 'absolute';
+  let arcCenterMode: ProgramMotionState['arcCenterMode'] = 'incremental';
+  let motionMode: InterpretedPoint['mode'];
+  let units: ProgramMotionState['units'] = 'unknown';
+  const observedMCodes: number[] = [];
+
+  lines.forEach((rawSourceLine, sourceLine) => {
+    const executable = executableCode(rawSourceLine).trim();
+    const words = [...executable.matchAll(PROGRAM_WORD)];
+    const gCodes = words.filter(word => word[1].toUpperCase() === 'G').map(word => Number(word[2]));
+    const mCodes = words.filter(word => word[1].toUpperCase() === 'M').map(word => Number(word[2]));
+    const values = new Map<string, number>();
+    for (const word of words) values.set(word[1].toUpperCase(), Number(word[2]));
+
+    for (const code of gCodes) {
+      if (code === 20) units = 'inch';
+      if (code === 21) units = 'millimeter';
+      if (code === 90) distanceMode = 'absolute';
+      if (code === 91) distanceMode = 'incremental';
+      if (code === 90.1) arcCenterMode = 'absolute';
+      if (code === 91.1) arcCenterMode = 'incremental';
+      if (Number.isInteger(code) && code >= 0 && code <= 3) motionMode = `G0${code}` as InterpretedPoint['mode'];
+    }
+    observedMCodes.push(...mCodes);
+
+    let geometry: ProgramGeometryRecord | undefined;
+    if (motionMode && (values.has('X') || values.has('Y'))) {
+      const end = {
+        x: values.has('X') ? (distanceMode === 'incremental' ? current.x + values.get('X')! : values.get('X')!) : current.x,
+        y: values.has('Y') ? (distanceMode === 'incremental' ? current.y + values.get('Y')! : values.get('Y')!) : current.y,
+      };
+      geometry = {
+        mode: motionMode,
+        start: { ...current },
+        end,
+        x: values.get('X'), y: values.get('Y'), i: values.get('I'), j: values.get('J'),
+        distanceMode, arcCenterMode,
+      };
+      current = end;
+    }
+
+    const comments = sourceComments(rawSourceLine);
+    const boundary = executable === '%' || mCodes.some(code => code === 2 || code === 30);
+    const recognizedLetters = new Set(['G', 'M', 'F', 'X', 'Y', 'I', 'J']);
+    const controllerSpecific = words.some(word => !recognizedLetters.has(word[1].toUpperCase()));
+    let type: ProgramEventType = 'empty';
+    if (boundary) type = 'program-boundary';
+    else if (geometry) type = 'motion';
+    else if (mCodes.length) type = 'process';
+    else if (values.has('F')) type = 'feed';
+    else if (gCodes.length) type = 'state';
+    else if (controllerSpecific || executable) type = 'controller-command';
+    else if (comments.length) type = 'comment';
+
+    events.push({
+      order: events.length,
+      sourceLine,
+      rawSourceLine,
+      executable,
+      comments,
+      type,
+      gCodes,
+      mCodes,
+      feed: values.get('F'),
+      geometry,
+      motionState: { distanceMode, arcCenterMode, motionMode, units },
+      processState: { activity: 'unknown', observedMCodes: [...observedMCodes] },
+    });
+  });
+  return events;
+}
+
+export function reconstructProgramStructure(
+  lines: readonly string[],
+  interpreter?: ControllerBoundaryInterpreter,
+): ProgramStructure {
+  const events = parseProgramEvents(lines);
+  if (!interpreter) return {
+    status: 'unsupported',
+    reason: 'No verified controller-family boundary profile is available.',
+    parts: [], contours: [], events,
+  };
+  const result = interpreter.reconstruct(events);
+  if (result.status === 'unsupported') return {
+    status: 'unsupported', controllerProfileId: interpreter.id, reason: result.reason,
+    parts: [], contours: [], events,
+  };
+  const ownedEvents = events.map(event => ({ ...event }));
+  for (const part of result.parts) {
+    for (const order of part.orderedEventOrders) {
+      const event = ownedEvents[order];
+      if (!event || (event.programPartId && event.programPartId !== part.id)) return {
+        status: 'unsupported', controllerProfileId: interpreter.id,
+        reason: 'Controller profile returned invalid or overlapping part ownership.',
+        parts: [], contours: [], events,
+      };
+      event.programPartId = part.id;
+    }
+    for (const contour of part.contours) {
+      for (const order of contour.eventOrders) {
+        const event = ownedEvents[order];
+        if (!event || event.programPartId !== part.id || (event.contourId && event.contourId !== contour.id)) return {
+          status: 'unsupported', controllerProfileId: interpreter.id,
+          reason: 'Controller profile returned invalid contour ownership.',
+          parts: [], contours: [], events,
+        };
+        event.contourId = contour.id;
+      }
+    }
+  }
+  return { status: 'verified', controllerProfileId: interpreter.id, parts: result.parts, contours: result.contours, events: ownedEvents };
+}
+
+export function interpretStructuredToolpath(lines: string[], structure: ProgramStructure): InterpretedPoint[] {
+  return interpretToolpath(lines).map(point => {
+    if (point.eventIndex === undefined) return point;
+    const event = structure.events[point.eventIndex];
+    return event ? { ...point, programPartId: event.programPartId, contourId: event.contourId } : point;
+  });
+}
+
+type EditableWord = 'G' | 'X' | 'Y' | 'I' | 'J';
+
+export function readSourceLineValues(line: string): Partial<Record<EditableWord, string>> {
+  const values: Partial<Record<EditableWord, string>> = {};
+  for (const match of executableCode(line).matchAll(/([GXYIJ])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi)) {
+    const letter = match[1].toUpperCase() as EditableWord;
+    if (letter !== 'G' || [0, 1, 2, 3].includes(Number(match[2]))) values[letter] = match[2];
+  }
+  return values;
+}
+
+/** Patch only explicit words on the selected physical record, never a prior move. */
+export function patchSourceLine(line: string, edits: Partial<Record<EditableWord, string>>): string {
+  let result = line;
+  for (const [letter, value] of Object.entries(edits)) {
+    if (!value?.trim()) continue;
+    const next = value.trim();
+    if (readSourceLineValues(result)[letter as EditableWord] === next) continue;
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(next) || !Number.isFinite(Number(next))) {
+      throw new Error(`${letter} must be a finite signed number.`);
+    }
+    const matches = [...executableCode(result).matchAll(new RegExp(`(${letter}\\s*)([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))`, 'gi'))];
+    if (matches.length !== 1) throw new Error(`${letter} must occur exactly once on this source line. Select its own line to edit it.`);
+    const match = matches[0];
+    if (letter === 'G' && (![0, 1, 2, 3].includes(Number(next)) || ![0, 1, 2, 3].includes(Number(match[2])))) {
+      throw new Error('Only an existing G0–G3 motion word can be edited here.');
+    }
+    const start = match.index! + match[1].length;
+    result = result.slice(0, start) + next + result.slice(start + match[2].length);
+  }
+  return result;
+}
+
+export function coordinateDescription(lines: string[], selectedLine: number): string {
+  let units = 'units undeclared';
+  let distance = 'G90 assumed by preview';
+  for (const line of lines.slice(0, selectedLine + 1)) {
+    for (const match of executableCode(line).matchAll(/G\s*(\d+(?:\.\d+)?)/gi)) {
+      const g = Number(match[1]);
+      if (g === 20) units = 'inches (G20)';
+      if (g === 21) units = 'mm (G21)';
+      if (g === 90) distance = 'absolute endpoints (G90)';
+      if (g === 91) distance = 'incremental endpoints (G91)';
+    }
+  }
+  return `${units}; ${distance}`;
 }
 
 export function interpretToolpath(lines: string[]): InterpretedPoint[] {
@@ -143,6 +477,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
     };
 
     if (movementMode === 'G02' || movementMode === 'G03') {
+      const semantics = motionSemantics(movementMode);
       const isPierce = needsPierce;
       needsPierce = false;
       const hasCenter = values.has('I') || values.has('J');
@@ -157,7 +492,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       const radius = Math.hypot(current.x - center.x, current.y - center.y);
 
       if (!hasCenter || radius === 0) {
-        points.push({ ...end, line: lineIndex, mode: movementMode, pierce: isPierce, commandEnd: true });
+        points.push({ ...end, line: lineIndex, eventIndex: lineIndex, mode: movementMode, ...semantics, pierce: isPierce, commandEnd: true });
         current = end;
         continue;
       }
@@ -165,9 +500,13 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
       const startAngle = Math.atan2(current.y - center.y, current.x - center.x);
       const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
       let sweep = endAngle - startAngle;
+      const fullCircle = Math.hypot(end.x - current.x, end.y - current.y) < 1e-9;
+      if (fullCircle && Math.abs(sweep) < 1e-12) {
+        sweep = movementMode === 'G02' ? -Math.PI * 2 : Math.PI * 2;
+      }
       if (movementMode === 'G02' && sweep > 0) sweep -= Math.PI * 2;
       if (movementMode === 'G03' && sweep < 0) sweep += Math.PI * 2;
-      const steps = Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8));
+      const steps = Math.min(2048, Math.max(12, Math.ceil(Math.abs(sweep) * radius * 8)));
 
       for (let step = 1; step <= steps; step += 1) {
         const angle = startAngle + (sweep * step) / steps;
@@ -175,7 +514,9 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
           x: center.x + Math.cos(angle) * radius,
           y: center.y + Math.sin(angle) * radius,
           line: lineIndex,
+          eventIndex: lineIndex,
           mode: movementMode,
+          ...semantics,
           pierce: isPierce && step === 1,
           commandEnd: step === steps,
         });
@@ -187,7 +528,7 @@ export function interpretToolpath(lines: string[]): InterpretedPoint[] {
     const isPierce = movementMode === 'G01' && needsPierce;
     if (movementMode === 'G00') needsPierce = true;
     if (movementMode === 'G01') needsPierce = false;
-    points.push({ ...end, line: lineIndex, mode: movementMode, pierce: isPierce, commandEnd: true });
+    points.push({ ...end, line: lineIndex, eventIndex: lineIndex, mode: movementMode, ...motionSemantics(movementMode), pierce: isPierce, commandEnd: true });
     current = end;
   }
 

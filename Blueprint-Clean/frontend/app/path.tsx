@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 import {
   View,
@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Platform
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -18,47 +19,56 @@ import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
 import {
-  decodeTextDocument,
-  detectContainer,
+  importControllerDocument,
   encodeTextDocument,
   interpretToolpath,
-  patchMotionBlock,
-  readMotionBlockValues,
+  interpretStructuredToolpath,
+  reconstructProgramStructure,
+  readSourceLineValues,
+  coordinateDescription,
   serializeTextDocument,
   type TextDocument,
+  type InterpretedPoint,
 } from '../utils/gcodeDocument';
+import { fitPreview, selectedMoveMeasurements } from '../utils/previewGeometry';
+import InsertMotionDialog from '../components/InsertMotionDialog';
+import ProgramSettings from '../components/ProgramSettings';
+import NestingWorkspace from '../components/NestingWorkspace';
+import { reviewMeasurementEdit } from '../utils/measurementEdit';
+import { messerProgrammedNestProfile } from '../utils/messerProgrammedNest';
+import { rotateVerifiedProgramPart } from '../utils/programPartRotation';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
-
-type ToolpathPoint = {
-  x: number;
-  y: number;
-  line?: number;
-  mode?: MovementMode;
-  pierce?: boolean;
-  commandEnd?: boolean;
-};
 
 const movementColor: Record<MovementMode, string> = {
   G00: '#FF9F0A',
   G01: '#35D0E5',
-  G02: '#64D2FF',
-  G03: '#5E5CE6',
+  G02: '#35D0E5',
+  G03: '#35D0E5',
 };
 
 export default function Path() {
+  const { width: viewportWidth } = useWindowDimensions();
+  const isCompact = viewportWidth < 560;
   const codeScrollRef = useRef<ScrollView>(null);
 const previewScrollRef = useRef<ScrollView>(null);
 const isSyncingScroll = useRef(false);
- const { user, isGuest, isPro } = useAuth();
+ const { user, isGuest, isPro, checkoutMessage } = useAuth();
   const router = useRouter();
  const [selectedLine, setSelectedLine] = useState<number | null>(null);
- const [insertLineText, setInsertLineText] = useState('G1 X0 Y0');
 const [fileContent, setFileContent] = useState<string[]>([]);
 const [lineEndings, setLineEndings] = useState<string[]>([]);
 const [hasUtf8Bom, setHasUtf8Bom] = useState(false);
+const [sourceKind, setSourceKind] = useState<TextDocument['sourceKind']>('controller-text');
+const [importedPreview, setImportedPreview] = useState<InterpretedPoint[]>([]);
+const [unsupportedEntities, setUnsupportedEntities] = useState<Record<string, number>>({});
+const [resolvedBlocks, setResolvedBlocks] = useState<string[]>([]);
 const [history, setHistory] = useState<TextDocument[]>([]);
 const [fileName, setFileName] = useState('');
+const [importError, setImportError] = useState('');
+const [editError, setEditError] = useState('');
+const [insertionAfter, setInsertionAfter] = useState<number | null>(null);
+const [previewWidth, setPreviewWidth] = useState(320);
 
 const currentDocument = (): TextDocument => ({
   lines: fileContent,
@@ -79,9 +89,22 @@ const [editI, setEditI] = useState('');
 const [editJ, setEditJ] = useState('');
 const [scrollLocked, setScrollLocked] = useState(false);
 const [showLineIds, setShowLineIds] = useState(false);
+const [editorMode, setEditorMode] = useState<'line' | 'part'>('line');
+const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
+const selectedPartRef = useRef<string | null>(null);
+const documentRef = useRef<TextDocument>({ lines: [], endings: [], hasUtf8Bom: false });
+const holdDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const holdRepeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+const holdAppliedRef = useRef(false);
+documentRef.current = currentDocument();
+useEffect(() => () => {
+  if (holdDelayRef.current) clearTimeout(holdDelayRef.current);
+  if (holdRepeatRef.current) clearInterval(holdRepeatRef.current);
+}, []);
 
 const selectSourceLine = (line: number) => {
-  const values = readMotionBlockValues(fileContent, line);
+  const values = readSourceLineValues(fileContent[line] ?? '');
+  setEditError('');
   setSelectedLine(line);
   setEditG(values.G ?? '');
   setEditX(values.X ?? '');
@@ -94,46 +117,78 @@ const selectSourceLine = (line: number) => {
   });
 };
 
-let selectedText = '';
+const programStructure = sourceKind === 'controller-text' && fileContent.length
+  ? reconstructProgramStructure(fileContent, messerProgrammedNestProfile)
+  : reconstructProgramStructure([]);
+const partModeAvailable = programStructure.status === 'verified';
+const toolpath: InterpretedPoint[] = sourceKind === 'dxf'
+  ? importedPreview
+  : partModeAvailable
+    ? interpretStructuredToolpath(fileContent, programStructure)
+    : interpretToolpath(fileContent);
 
+const selectPreviewPoint = (point: InterpretedPoint) => {
+  if (editorMode === 'part') {
+    const partId = point.programPartId ?? null;
+    setSelectedPartId(partId);
+    selectedPartRef.current = partId;
+    setEditError(partId ? '' : 'This geometry has no verified ProgramPart identity.');
+    return;
+  }
+  if (point.line !== undefined) selectSourceLine(point.line);
+};
+
+const rotateSelectedPart = (degrees: number, addUndo: boolean) => {
+  const partId = selectedPartRef.current;
+  if (!partId) { setEditError('Select a verified whole part before rotating.'); return false; }
+  try {
+    const before = documentRef.current;
+    const structure = reconstructProgramStructure(before.lines, messerProgrammedNestProfile);
+    const next = rotateVerifiedProgramPart(before, structure, partId, degrees);
+    if (addUndo) setHistory(previous => [...previous, before]);
+    documentRef.current = next;
+    setFileContent(next.lines);
+    setEditError('');
+    return true;
+  } catch (error) {
+    setEditError(error instanceof Error ? error.message : 'Selected part could not be rotated safely.');
+    return false;
+  }
+};
+
+const beginRotation = (degrees: number) => {
+  if (!selectedPartRef.current) { setEditError('Select a verified whole part before rotating.'); return; }
+  holdAppliedRef.current = false;
+  holdDelayRef.current = setTimeout(() => {
+    holdAppliedRef.current = true;
+    const before = documentRef.current;
+    if (!rotateSelectedPart(degrees, false)) return;
+    setHistory(previous => [...previous, before]);
+    holdRepeatRef.current = setInterval(() => rotateSelectedPart(degrees, false), 90);
+  }, 350);
+};
+
+const endRotation = (degrees: number) => {
+  if (holdDelayRef.current) clearTimeout(holdDelayRef.current);
+  if (holdRepeatRef.current) clearInterval(holdRepeatRef.current);
+  holdDelayRef.current = null;
+  holdRepeatRef.current = null;
+  if (!holdAppliedRef.current) rotateSelectedPart(degrees, true);
+  holdAppliedRef.current = false;
+};
+const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
+const origin = preview.project({ x: 0, y: 0 });
+const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
+const movementLines = [...new Set(toolpath.filter(point => point.commandEnd && point.line !== undefined).map(point => point.line!))];
+const previousMove = movementLines.filter(line => line < (selectedLine ?? 0)).pop();
+const nextMove = movementLines.find(line => line > (selectedLine ?? -1));
+const signed = (value: number) => `${value > 0 ? '+' : ''}${Number(value.toFixed(4))}`;
+let measurementDraft: ReturnType<typeof reviewMeasurementEdit> | undefined;
+let measurementDraftError = '';
 if (selectedLine !== null) {
-  let start = selectedLine;
-
-  while (start > 0 && !fileContent[start].match(/^G0?[0123]/)) {
-    start--;
-  }
-
-  selectedText = fileContent[start] || '';
-
-  for (let i = start + 1; i < fileContent.length; i++) {
-    const next = fileContent[i] || '';
-
-    if (next.match(/^G0?[0123]/)) break
-
-    selectedText += ' ' + next;
-  }
+  try { measurementDraft = reviewMeasurementEdit(fileContent, selectedLine, { X: editX, Y: editY, G: editG, I: editI, J: editJ }); }
+  catch (error) { measurementDraftError = error instanceof Error ? error.message : 'Measurements unavailable.'; }
 }
-
-const toolpath: ToolpathPoint[] = interpretToolpath(fileContent);
-const parsedCoords = selectedLine === null
-  ? null
-  : [...toolpath]
-      .reverse()
-      .find(point => point.line !== undefined && point.line <= selectedLine) ?? { x: 0, y: 0 };
-  const cleanPoints = toolpath.filter(p => !Number.isNaN(p.x) && !Number.isNaN(p.y));
-  
-const xs = cleanPoints.map(p => p.x);
-const ys = cleanPoints.map(p => p.y);
-
-const minX = Math.min(...xs);
-const maxX = Math.max(...xs);
-const minY = Math.min(...ys);
-const maxY = Math.max(...ys);
-
-const width = maxX - minX || 1;
-const height = maxY - minY || 1;
-
-const scale = Math.min(200 / width, 200 / height);
 
 
 return (
@@ -141,125 +196,95 @@ return (
   <ScrollView
   scrollEnabled={!scrollLocked}
   style={styles.container}
-  contentContainerStyle={{ paddingBottom: 240 }}
+  contentContainerStyle={[styles.content, isCompact && styles.contentCompact]}
   keyboardShouldPersistTaps="handled"
 >
-    <Text style={styles.title}>Path Edit</Text>
-    <Text style={styles.subtitle}>
-      Import CNC files, inspect G-code, and preview tool movement.
-    </Text>
-   
+    <View style={styles.pageHeader}>
+      <View style={styles.headingIcon}>
+        <Ionicons name="settings-outline" size={25} color="#0A84FF" />
+      </View>
+      <View style={styles.headingCopy}>
+        <Text style={styles.title}>Path Edit</Text>
+        <Text style={styles.subtitle}>Import, inspect, adjust, and preview your CNC toolpath.</Text>
+      </View>
+      <Ionicons name="help-circle-outline" size={27} color="#0A84FF" />
+    </View>
 
-    <TouchableOpacity
-      style={styles.primaryButton}
+    <View style={[styles.primaryActions, isCompact && styles.primaryActionsCompact]}>
+      <View style={styles.primaryActionSlot}>
+        <NestingWorkspace canExport={!isGuest && !!user && isPro} onUpgrade={() => router.push('/upgrade')} />
+      </View>
+      <TouchableOpacity
+      accessibilityRole="button"
+      style={[styles.primaryButton, styles.importButton]}
       onPress={async () => {
   
   const result = await DocumentPicker.getDocumentAsync({
     type: '*/*',
     copyToCacheDirectory: true,
   });
-  console.log('PICKER RESULT:', JSON.stringify(result, null, 2));
 
   if (!result.canceled) {
   const file = result.assets[0];
 
   if (file.uri) {
+  try {
   const response = await fetch(file.uri);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const container = detectContainer(bytes);
-
-  if (container === 'dwg') {
-    Alert.alert(
-      'DWG-based CNC file recognized',
-      'This file uses an AutoCAD DWG container. MAB preserved the requirement, but safe DWG editing/export is not enabled yet.'
-    );
-    return;
-  }
-
-  if (container !== 'text') {
-    Alert.alert(
-      'Binary CNC format recognized',
-      'MAB does not yet have a verified round-trip codec for this binary format.'
-    );
-    return;
-  }
-
-  try {
-    const document = decodeTextDocument(bytes);
+    const document = importControllerDocument(bytes);
     setFileName(file.name || 'Imported file');
+    setImportError('');
     setFileContent(document.lines);
     setLineEndings(document.endings);
     setHasUtf8Bom(document.hasUtf8Bom);
+    setSourceKind(document.sourceKind ?? 'controller-text');
+    setImportedPreview(document.previewGeometry ?? []);
+    setUnsupportedEntities(document.unsupportedEntities ?? {});
+    setResolvedBlocks(document.resolvedBlocks ?? []);
     setHistory([]);
     setSelectedLine(null);
-  } catch {
-    Alert.alert(
-      'Unsupported text encoding',
-      'This controller program is not valid UTF-8. MAB left the source file unchanged.'
-    );
+    setEditorMode('line');
+    setSelectedPartId(null); selectedPartRef.current = null;
+    setZoom(1); setPanX(0); setPanY(0);
+    setEditX(''); setEditY(''); setEditG(''); setEditI(''); setEditJ(''); setEditError('');
+  } catch (error) {
+    setImportError(error instanceof Error ? error.message : 'Could not read this file. The current document and source are unchanged.');
   }
 
   }
 }
 }}
     >
-      <Ionicons name="cloud-upload-outline" size={28} color="#fff" />
+      <Ionicons name="cloud-upload-outline" size={30} color="#fff" />
       <Text style={styles.primaryText}>Import CNC File</Text>
+      <Text style={styles.actionHint}>.nc  .tap  .gcode  .txt</Text>
     </TouchableOpacity>
-{fileName !== '' && (
-  <ScrollView
-  ref={codeScrollRef}
-  style={[styles.panel, { maxHeight: 400 }]}
-  onScroll={(e) => {
-    if (!scrollLocked || isSyncingScroll.current) return;
-
-    isSyncingScroll.current = true;
-
-    previewScrollRef.current?.scrollTo({
-      y: e.nativeEvent.contentOffset.y,
-      animated: false,
-    });
-
-    isSyncingScroll.current = false;
-  }}
-  scrollEventThrottle={16}
->
-    {fileContent.map((line, i) => {
-      return (
-        <View key={i}>
-          <Text
-            onPress={() => selectSourceLine(i)}
-            style={[
-              styles.panelText,
-              line.includes('G') && { color: '#4FC3F7' },
-              selectedLine === i && { backgroundColor: '#333' },
-            ]}
-          >
-            {i + 1}. {line}
-          </Text>
-        </View>
-      );
-    })}
-  </ScrollView>
-)}
-
+    </View>
+{importError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{importError}</Text>}
+{sourceKind === 'dxf' && <Text accessibilityRole="text" style={{ color: '#FF9F0A' }}>
+  DXF preview resolved {resolvedBlocks.length ? resolvedBlocks.join(', ') : 'top-level geometry'}. Preview-only: DXF geometry editing is not enabled.
+  {Object.keys(unsupportedEntities).length ? ` Unsupported and not rendered: ${Object.entries(unsupportedEntities).map(([type, count]) => `${count} ${type}`).join(', ')}.` : ''}
+</Text>}
 <TouchableOpacity
   style={[
-    styles.secondaryButton,
-    scrollLocked && { backgroundColor: '#4FC3F7' },
+    styles.scrollControl,
+    scrollLocked && styles.scrollControlActive,
   ]}
   onPress={() => setScrollLocked(!scrollLocked)}
 >
-  <Text style={styles.primaryText}>
+  <Text style={styles.scrollControlText}>
     {scrollLocked ? '🔒 Scroll Locked' : '🔓 Scroll Free'}
   </Text>
 </TouchableOpacity>
 
 
   
-<View style={styles.panel}>
+<View style={[styles.panel, styles.previewPanel]}>
   <View style={styles.previewHeader}>
-    <Text style={styles.panelTitle}>Preview</Text>
+    <View style={styles.sectionHeading}>
+      <Ionicons name="eye-outline" size={24} color="#0A84FF" />
+      <Text style={styles.panelTitle}>Preview</Text>
+    </View>
     <TouchableOpacity
       accessibilityRole="switch"
       accessibilityState={{ checked: showLineIds }}
@@ -271,13 +296,52 @@ return (
       </Text>
     </TouchableOpacity>
   </View>
+  {sourceKind === 'controller-text' && fileContent.length > 0 && <>
+    <View style={styles.partControlRow}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Rotate selected part counterclockwise"
+        disabled={editorMode !== 'part' || !selectedPartId}
+        style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
+        onPressIn={() => beginRotation(-1)}
+        onPressOut={() => endRotation(-1)}
+      ><Text style={styles.rotationButtonText}>↺ CCW</Text></TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="switch"
+        accessibilityState={{ checked: editorMode === 'part', disabled: !partModeAvailable }}
+        style={[styles.modeButton, editorMode === 'part' && styles.modeButtonActive, !partModeAvailable && styles.partControlDisabled]}
+        onPress={() => {
+          if (!partModeAvailable) { setEditError('PART mode is unavailable because this program has no verified ProgramPart identity.'); return; }
+          const next = editorMode === 'line' ? 'part' : 'line';
+          setEditorMode(next);
+          if (next === 'line') { setSelectedPartId(null); selectedPartRef.current = null; }
+          setEditError('');
+        }}
+      ><Text style={styles.modeButtonText}>{editorMode === 'line' ? 'LINE | PART' : 'LINE | PART ✓'}</Text></TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Rotate selected part clockwise"
+        disabled={editorMode !== 'part' || !selectedPartId}
+        style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
+        onPressIn={() => beginRotation(1)}
+        onPressOut={() => endRotation(1)}
+      ><Text style={styles.rotationButtonText}>CW ↻</Text></TouchableOpacity>
+    </View>
+    <Text style={styles.partModeNotice}>
+      {partModeAvailable
+        ? editorMode === 'part'
+          ? selectedPartId ? `PART mode · ${selectedPartId} selected` : 'PART mode · tap verified part geometry to select the whole part'
+          : 'LINE mode · individual source-line editing remains active'
+        : 'PART mode unavailable · controller/program identity is not verified'}
+    </Text>
+  </>}
   <View style={styles.legend}>
     {([
       ['#FF9F0A', 'Rapid'],
-      ['#35D0E5', 'Cut'],
-      ['#64D2FF', 'CW arc'],
-      ['#5E5CE6', 'CCW arc'],
       ['#FF453A', 'Pierce'],
+      ['#2F80ED', 'Lead-in'],
+      ['#35D0E5', 'Cut'],
+      ['#8E5CE6', 'Lead-out'],
     ] as const).map(([color, label]) => (
       <View key={label} style={styles.legendItem}>
         <View style={[styles.legendSwatch, { backgroundColor: color }]} />
@@ -285,16 +349,26 @@ return (
       </View>
     ))}
   </View>
-  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-  <TouchableOpacity style={styles.primaryButton} onPress={() => setZoom(Math.max(0.5, zoom - 0.5))}>
-    <Text style={styles.primaryText}>Zoom -</Text>
+  <View style={styles.geometryLegend}>
+    <Text style={styles.legendText}>━━ Straight</Text>
+    <Text style={styles.legendText}>┄┄ ↻ CW arc</Text>
+    <Text style={styles.legendText}>┈┈ ↺ CCW arc</Text>
+  </View>
+  <View style={styles.zoomRow}>
+  <TouchableOpacity style={styles.zoomButton} onPress={() => setZoom(Math.max(0.5, zoom - 0.5))}>
+    <Text style={styles.zoomButtonText}>Zoom -</Text>
   </TouchableOpacity>
 
-  <TouchableOpacity style={styles.primaryButton} onPress={() => setZoom(zoom + 0.5)}>
-    <Text style={styles.primaryText}>Zoom +</Text>
+  <View style={styles.zoomReadout}><Text style={styles.zoomReadoutText}>{zoom}x</Text></View>
+
+  <TouchableOpacity style={styles.zoomButton} onPress={() => setZoom(zoom + 0.5)}>
+    <Text style={styles.zoomButtonText}>Zoom +</Text>
   </TouchableOpacity>
 
-  <Text style={styles.panelText}>Zoom: {zoom}x</Text>
+  <TouchableOpacity accessibilityRole="button" style={styles.fitButton} onPress={() => { setZoom(1); setPanX(0); setPanY(0); }}>
+    <Ionicons name="expand-outline" size={18} color="#fff" />
+    <Text style={styles.fitButtonText}>Fit</Text>
+  </TouchableOpacity>
 </View>
 <ScrollView
   ref={previewScrollRef}
@@ -316,7 +390,9 @@ return (
     isSyncingScroll.current = false;
   }}
   scrollEventThrottle={16}
-  style={{ height: 200, maxHeight: 200, backgroundColor: '#111', overflow: 'hidden' }}
+  onLayout={event => setPreviewWidth(event.nativeEvent.layout.width)}
+  style={styles.previewCanvas}
+  contentContainerStyle={{ height: 240 }}
   onStartShouldSetResponder={() => false}
   onResponderGrant={(e) => {
     setIsDragging(true);
@@ -337,28 +413,31 @@ return (
   }}
   onResponderRelease={() => setIsDragging(false)}
 >
+   {editorMode === 'part' && <TouchableOpacity
+     accessibilityRole="button"
+     accessibilityLabel="Deselect programmed part"
+     activeOpacity={1}
+     onPress={() => { setSelectedPartId(null); selectedPartRef.current = null; setEditError(''); }}
+     style={StyleSheet.absoluteFill}
+   />}
+   <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: origin.y, width: previewWidth, borderTopWidth: 1, borderColor: '#555' }} />
+   <View pointerEvents="none" style={{ position: 'absolute', left: origin.x, top: 0, height: 240, borderLeftWidth: 1, borderColor: '#555' }} />
+   <Text pointerEvents="none" style={{ position: 'absolute', left: origin.x + 4, top: origin.y + 4, color: '#aaa', fontSize: 10 }}>0,0</Text>
    {toolpath.map((point, i) => {
-  if (i === 0) return null;
+  if (i === 0 || point.breakBefore) return null;
 
   const prev = toolpath[i - 1];
   if (
-  Number.isNaN(point.x) ||
-  Number.isNaN(point.y) ||
-  Number.isNaN(prev.x) ||
-  Number.isNaN(prev.y)
+  !Number.isFinite(point.x) ||
+  !Number.isFinite(point.y) ||
+  !Number.isFinite(prev.x) ||
+  !Number.isFinite(prev.y)
 ) {
   return null;
 }
 
-  // 🔹 SCALE DOWN (key change)
-  const scale = 6 * zoom;
-
-  const x1 = (prev.x - minX) * scale;
-  const y1 = (prev.y - minY) * scale;
-
-
-const x2 = (point.x - minX) * scale;
-const y2 = (point.y - minY) * scale;
+  const { x: x1, y: y1 } = preview.project(prev);
+  const { x: x2, y: y2 } = preview.project(point);
 
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -366,7 +445,8 @@ const y2 = (point.y - minY) * scale;
   const length = Math.sqrt(dx * dx + dy * dy);
   const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-  const isSelected = point.line === selectedLine;
+  const isPartSelected = editorMode === 'part' && point.programPartId === selectedPartId;
+  const isSelected = editorMode === 'line' ? point.line === selectedLine : isPartSelected;
   const color = point.mode ? movementColor[point.mode] : '#35D0E5';
 
   return (
@@ -377,46 +457,53 @@ const y2 = (point.y - minY) * scale;
         ? 'Toolpath movement'
         : `Select source line ${point.line + 1}`}
       activeOpacity={0.7}
-      disabled={point.line === undefined}
-      onPress={() => point.line !== undefined && selectSourceLine(point.line)}
+      disabled={editorMode === 'line' ? point.line === undefined : point.programPartId === undefined}
+      onPress={() => selectPreviewPoint(point)}
       style={{
         position: 'absolute',
-        left: x1 + (200 - width * scale) / 2 + panX,
-        top: y1 + (200 - height * scale) / 2 + panY - 6,
+        left: x1,
+        top: y1 - 7,
         width: length,
         height: 14,
-        borderTopColor: isSelected ? '#FFD60A' : color,
-        borderTopWidth: isSelected ? 4 : 2,
-        borderStyle: point.mode === 'G00' ? 'dashed' : 'solid',
-        paddingVertical: 6,
         transform: [{ rotate: `${angle}deg` }],
         transformOrigin: 'left center',
       }}
-    />
+    >
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 7, width: length, borderTopColor: isSelected ? '#FFD60A' : color, borderTopWidth: isSelected ? 5 : 2, borderStyle: point.mode === 'G00' || point.geometry === 'arc-cw' ? 'dashed' : point.geometry === 'arc-ccw' ? 'dotted' : 'solid' }} />
+    </TouchableOpacity>
     {point.pierce && (
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={`Pierce at source line ${(point.line ?? 0) + 1}`}
-        onPress={() => point.line !== undefined && selectSourceLine(point.line)}
+        onPress={() => selectPreviewPoint(point)}
         style={[
           styles.pierceMarker,
           {
-            left: x1 + (200 - width * scale) / 2 + panX - 5,
-            top: y1 + (200 - height * scale) / 2 + panY - 5,
+            left: x1 - 5,
+            top: y1 - 5,
           },
         ]}
       />
+    )}
+    {point.commandEnd && (point.geometry === 'arc-cw' || point.geometry === 'arc-ccw') && (
+      <Text
+        pointerEvents="none"
+        accessibilityLabel={`Cut ${point.geometry === 'arc-cw' ? 'clockwise' : 'counterclockwise'} arc direction`}
+        style={[styles.arcDirection, { left: x2 - 6, top: y2 - 18 }]}
+      >
+        {point.geometry === 'arc-cw' ? '↻' : '↺'}
+      </Text>
     )}
     {showLineIds && point.commandEnd && point.line !== undefined && (
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={`Select source line ${point.line + 1}`}
-        onPress={() => selectSourceLine(point.line!)}
+        onPress={() => selectPreviewPoint(point)}
         style={[
           styles.lineIdBadge,
           {
-            left: x2 + (200 - width * scale) / 2 + panX + 4,
-            top: y2 + (200 - height * scale) / 2 + panY - 9,
+            left: x2 + 4,
+            top: y2 - 9,
           },
           isSelected && styles.lineIdBadgeSelected,
         ]}
@@ -429,19 +516,57 @@ const y2 = (point.y - minY) * scale;
 })}
       
   </ScrollView>
+  <View style={styles.coordinateRow}>
+    <Text style={styles.coordinateText}>X {signed(preview.minX)} to {signed(preview.maxX)} | Y {signed(preview.minY)} to {signed(preview.maxY)}</Text>
+    <Text style={styles.coordinateText}>+X right, +Y up</Text>
+  </View>
 </View>
 
 <View style={styles.panel}>
-  <Text style={styles.panelTitle}>G-Code</Text>
+  <View style={styles.sectionHeading}>
+    <Ionicons name="code-slash-outline" size={24} color="#0A84FF" />
+    <Text style={styles.panelTitle}>G-Code</Text>
+  </View>
 
-  <Text style={styles.inspectNotice}>
-    {selectedLine !== null
-      ? `Inspecting Line ${selectedLine + 1} — selection does not modify code.`
-      : 'Select a code line or preview movement to inspect it. Selection does not modify code.'}
-  </Text>
+  <View style={styles.selectedSummary}>
+    <Text style={styles.selectedTitle}>Selected line: {selectedLine === null ? 'none' : selectedLine + 1}</Text>
+    <Text style={styles.inspectNotice}>
+      {selectedLine === null
+        ? 'Tap a line in the preview or select from code to view details.'
+        : 'Selection is for inspection and does not modify code.'}
+    </Text>
+  </View>
 
-  <ScrollView
-  ref={codeScrollRef}
+  {fileName !== '' && (
+    <ScrollView
+      ref={codeScrollRef}
+      nestedScrollEnabled
+      style={styles.codeList}
+      onScroll={(e) => {
+        if (!scrollLocked || isSyncingScroll.current) return;
+        isSyncingScroll.current = true;
+        previewScrollRef.current?.scrollTo({ y: e.nativeEvent.contentOffset.y, animated: false });
+        isSyncingScroll.current = false;
+      }}
+      scrollEventThrottle={16}
+    >
+      {fileContent.map((line, i) => (
+        <Text
+          key={i}
+          onPress={() => selectSourceLine(i)}
+          style={[
+            styles.codeLine,
+            line.includes('G') && styles.codeMotionLine,
+            selectedLine === i && styles.codeLineSelected,
+          ]}
+        >
+          {i + 1}. {line}
+        </Text>
+      ))}
+    </ScrollView>
+  )}
+
+  {selectedLine !== null && <ScrollView
   scrollEnabled={true}
   nestedScrollEnabled={true}
   onStartShouldSetResponder={() => true}
@@ -451,122 +576,84 @@ const y2 = (point.y - minY) * scale;
     <Text style={styles.panelText}>
       {selectedLine !== null
         ? fileContent[selectedLine]
-        : 'Select a line above'}
+        : ''}
     </Text>
-  </ScrollView>
+  </ScrollView>}
 
-  <Text style={styles.panelText}>
-    X: {parsedCoords ? parsedCoords.x : '-'}
-    Y: {parsedCoords ? parsedCoords.y : '-'}
-  </Text>
+  {selectedLine !== null && <Text style={styles.panelText}>{coordinateDescription(fileContent, selectedLine)}</Text>}
+  {measured ? <Text style={styles.panelText}>
+    Start X {signed(measured.start.x)}  Y {signed(measured.start.y)}{'\n'}
+    End X {signed(measured.end.x)}  Y {signed(measured.end.y)}{'\n'}
+    ΔX {signed(measured.dx)}  ΔY {signed(measured.dy)}{'\n'}
+    Endpoint distance {Number(measured.endpointDistance.toFixed(4))}{measured.mode === 'G02' || measured.mode === 'G03' ? ' (chord, not arc length)' : ''}
+  </Text> : selectedLine !== null ? <Text style={styles.panelText}>No preview movement on this source line.</Text> : null}
+  {selectedLine !== null && <View style={styles.moveNavigation}>
+    <TouchableOpacity accessibilityRole="button" disabled={previousMove === undefined} onPress={() => previousMove !== undefined && selectSourceLine(previousMove)}><Text style={[styles.navigationText, previousMove === undefined && styles.disabledText]}>Previous move</Text></TouchableOpacity>
+    <TouchableOpacity accessibilityRole="button" disabled={nextMove === undefined} onPress={() => nextMove !== undefined && selectSourceLine(nextMove)}><Text style={[styles.navigationText, nextMove === undefined && styles.disabledText]}>Next move</Text></TouchableOpacity>
+  </View>}
 </View>
+{editError !== '' && <Text accessibilityRole="alert" style={{ color: '#FF9F0A' }}>{editError}</Text>}
+{checkoutMessage !== '' && <Text accessibilityRole="alert" style={styles.panelText}>{checkoutMessage}</Text>}
+<View style={styles.panel}>
+<View style={styles.sectionHeading}>
+  <Ionicons name="create-outline" size={24} color="#0A84FF" />
+  <Text style={styles.panelTitle}>Edit Line Values</Text>
+</View>
+{measurementDraft && <Text accessibilityLabel="Draft line measurements" style={styles.panelText}>
+  Draft start X {measurementDraft.start.x} Y {measurementDraft.start.y}{'\n'}
+  Draft end X {measurementDraft.end.x} Y {measurementDraft.end.y}{'\n'}
+  Draft ΔX {measurementDraft.dx} ΔY {measurementDraft.dy}{'\n'}
+  Source after Apply: {measurementDraft.source}{'\n'}
+  Uses the displayed coordinate modes and preview assumptions, not verified machine position. Following movement may start at this new endpoint.
+</Text>}
+{measurementDraftError !== '' && <Text accessibilityRole="alert" style={styles.panelText}>{measurementDraftError}</Text>}
   
 
-<Text style={styles.panelText}>
-  X:
-  <TextInput
-    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
-    value={editX}
-    onChangeText={setEditX}
-  />
-</Text>
+<View style={styles.fieldGrid}>
+  <View style={styles.fieldGroup}>
+    <Text style={styles.fieldLabel}>X</Text>
+    <TextInput style={styles.fieldInput} value={editX} accessibilityLabel="Source X" onChangeText={setEditX} />
+  </View>
+  <View style={styles.fieldGroup}>
+    <Text style={styles.fieldLabel}>Y</Text>
+    <TextInput style={styles.fieldInput} value={editY} accessibilityLabel="Source Y" onChangeText={setEditY} />
+  </View>
+  <View style={[styles.fieldGroup, styles.fieldGroupFull]}>
+    <Text style={styles.fieldLabel}>G</Text>
+    <TextInput style={styles.fieldInput} value={editG} accessibilityLabel="Source G motion" onChangeText={setEditG} />
+  </View>
+  <View style={styles.fieldGroup}>
+    <Text style={styles.fieldLabel}>I</Text>
+    <TextInput style={styles.fieldInput} value={editI} accessibilityLabel="Source I" onChangeText={setEditI} />
+  </View>
+  <View style={styles.fieldGroup}>
+    <Text style={styles.fieldLabel}>J</Text>
+    <TextInput style={styles.fieldInput} value={editJ} accessibilityLabel="Source J" onChangeText={setEditJ} />
+  </View>
+</View>
 
-<Text style={styles.panelText}>
-  Y:
-  <TextInput
-    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
-    value={editY}
-    onChangeText={setEditY}
-  />
-</Text>
-
-<Text style={styles.panelText}>
-  G:
-  <TextInput
-    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
-    value={editG}
-    onChangeText={setEditG}
-  />
-</Text>
-
-<Text style={styles.panelText}>
-  I:
-  <TextInput
-    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
-    value={editI}
-    onChangeText={setEditI}
-  />
-</Text>
-
-<Text style={styles.panelText}>
-  J:
-  <TextInput
-    style={{ color: 'white', borderBottomWidth: 1, borderColor: 'white', minWidth: 60 }}
-    value={editJ}
-    onChangeText={setEditJ}
-  />
-</Text>
+<View style={[styles.editActions, isCompact && styles.editActionsCompact]}>
 
 <TouchableOpacity
-  style={[styles.primaryButton, { backgroundColor: '#4FC3F7' }]}
-  onPress={async () => {
-if (isGuest || !user || !isPro) {
-  router.push('/upgrade');
-  return;
-}
-   try {
-  const sourceDocument = currentDocument();
-  const content = serializeTextDocument(sourceDocument);
-  const encoded = encodeTextDocument(sourceDocument);
-  const exportBytes = encoded.buffer.slice(
-    encoded.byteOffset,
-    encoded.byteOffset + encoded.byteLength
-  ) as ArrayBuffer;
-  const exportName = fileName || 'edited-program.gcode';
-
-  if (Platform.OS === 'web') {
-    const blob = new Blob([exportBytes], { type: 'application/octet-stream' });
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = downloadUrl;
-    link.download = exportName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
-  } else {
-    const fileUri =
-      FileSystem.documentDirectory + exportName;
-
-    await FileSystem.writeAsStringAsync(
-      fileUri,
-      (hasUtf8Bom ? '\uFEFF' : '') + content
-    );
-    await Sharing.shareAsync(fileUri);
-  }
-} catch (err) {
-  console.error('Export failed:', err);
-  alert('Export failed');
-}
-  }}
->
-  <Text style={styles.primaryText}>Export</Text>
-</TouchableOpacity>
-
-<TouchableOpacity
-  style={styles.primaryButton}
+  style={[styles.primaryButton, styles.editActionButton]}
   onPress={() => {
     if (selectedLine === null) return;
 
     const before = currentDocument();
-    const updated = patchMotionBlock(fileContent, selectedLine, {
+    const updated = [...fileContent];
+    try {
+    updated[selectedLine] = reviewMeasurementEdit(fileContent, selectedLine, {
       X: editX,
       Y: editY,
       G: editG,
       I: editI,
       J: editJ,
-    });
+    }).source;
+    setEditError('');
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Edit could not be validated.');
+      return;
+    }
 
     if (updated.every((line, index) => line === fileContent[index])) return;
 
@@ -574,29 +661,46 @@ if (isGuest || !user || !isPro) {
     setFileContent(updated);
   }}
 >
-  <Text style={styles.primaryText}>Apply</Text>
-</TouchableOpacity> 
+  <Ionicons name="checkmark-outline" size={24} color="#fff" />
+  <Text style={styles.primaryText}>Apply Changes</Text>
+</TouchableOpacity>
 
 
 
 
 <TouchableOpacity
-  style={[styles.primaryButton, { backgroundColor: 'red', marginTop: 12 }]}
+  style={[styles.primaryButton, styles.editActionButton, styles.undoButton]}
   onPress={() => {
     if (history.length === 0) return;
 
     const last = history[history.length - 1];
 
+    documentRef.current = last;
     setFileContent(last.lines);
     setLineEndings(last.endings);
     setHasUtf8Bom(last.hasUtf8Bom);
     setHistory(history.slice(0, -1));
+    if (selectedLine !== null) {
+      const values = readSourceLineValues(last.lines[selectedLine] ?? '');
+      setEditX(values.X ?? ''); setEditY(values.Y ?? ''); setEditG(values.G ?? ''); setEditI(values.I ?? ''); setEditJ(values.J ?? '');
+    }
+    setEditError('');
   }}
 >
+  <Ionicons name="arrow-undo-outline" size={22} color="#fff" />
   <Text style={styles.primaryText}>Undo</Text>
 </TouchableOpacity>
+</View>
+</View>
+
+<View style={styles.panel}>
+<View style={styles.sectionHeading}>
+  <Ionicons name="hammer-outline" size={24} color="#0A84FF" />
+  <Text style={styles.panelTitle}>More Tools</Text>
+</View>
+<View style={[styles.toolActions, isCompact && styles.toolActionsCompact]}>
 <TouchableOpacity
-  style={styles.primaryButton}
+  style={styles.toolButton}
   onPress={() => {
     if (isGuest || !user) {
   Alert.alert(
@@ -605,49 +709,22 @@ if (isGuest || !user || !isPro) {
   );
   return;
 }
-    const newLines = [...fileContent];
-
-    const insertAt =
-      selectedLine === null
-        ? newLines.length
-        : selectedLine + 1;
-
-   const newEndings = [...lineEndings];
-   const preferredEnding = lineEndings.find(ending => ending !== '') || '\n';
-   const insertedLines = [
-     'G03',
-     'X0',
-     'Y0',
-     'I0',
-     'J0'
-   ];
-
-   newLines.splice(
-  insertAt,
-  0,
-  ...insertedLines
-);
-
-    if (insertAt === fileContent.length && fileContent.length > 0 && newEndings[fileContent.length - 1] === '') {
-      newEndings[fileContent.length - 1] = preferredEnding;
-    }
-    const insertedEndings = insertedLines.map((_, index) =>
-      insertAt === fileContent.length && index === insertedLines.length - 1
-        ? ''
-        : preferredEnding
-    );
-    newEndings.splice(insertAt, 0, ...insertedEndings);
-
-    setHistory([...history, currentDocument()]);
-    setFileContent(newLines);
-    setLineEndings(newEndings);
-    selectSourceLine(insertAt);
+    if (selectedLine === null) { setEditError('Select a source line before adding a movement.'); return; }
+    setInsertionAfter(selectedLine);
   }}
 >
-  <Text style={styles.primaryText}>Add Line</Text>
+  <Ionicons name="add-outline" size={25} color="#64B5FF" />
+  <Text style={styles.toolButtonText}>Add Line</Text>
 </TouchableOpacity>
+{insertionAfter !== null && <InsertMotionDialog document={currentDocument()} after={insertionAfter} onCancel={() => setInsertionAfter(null)} onApply={next => {
+  if (isGuest || !user) { setInsertionAfter(null); return; }
+  setHistory([...history, currentDocument()]);
+  setFileContent(next.lines); setLineEndings(next.endings); setHasUtf8Bom(next.hasUtf8Bom);
+  // Keep selection on the original line so both Apply and Undo retain the same source scope.
+  setInsertionAfter(null); setEditError('');
+}} />}
 <TouchableOpacity
-  style={styles.primaryButton}
+  style={styles.toolButton}
   onPress={async () => {
 if (isGuest || !user || !isPro) {
   router.push('/upgrade');
@@ -657,8 +734,40 @@ if (isGuest || !user || !isPro) {
   await Clipboard.setStringAsync(serializeTextDocument(currentDocument()));
 }}
 >
-  <Text style={styles.primaryText}>Copy G-code</Text>
+  <Ionicons name="copy-outline" size={22} color="#64B5FF" />
+  <Text style={styles.toolButtonText}>Copy G-code</Text>
 </TouchableOpacity>
+<TouchableOpacity
+  style={styles.toolButton}
+  onPress={async () => {
+    if (isGuest || !user || !isPro) { router.push('/upgrade'); return; }
+    try {
+      const sourceDocument = currentDocument();
+      const content = serializeTextDocument(sourceDocument);
+      const encoded = encodeTextDocument(sourceDocument);
+      const exportBytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+      const exportName = fileName || 'edited-program.gcode';
+      if (Platform.OS === 'web') {
+        const blob = new Blob([exportBytes], { type: 'application/octet-stream' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl; link.download = exportName;
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+      } else {
+        const fileUri = FileSystem.documentDirectory + exportName;
+        await FileSystem.writeAsStringAsync(fileUri, (hasUtf8Bom ? '\uFEFF' : '') + content);
+        await Sharing.shareAsync(fileUri);
+      }
+    } catch (err) { console.error('Export failed:', err); alert('Export failed'); }
+  }}
+>
+  <Ionicons name="share-outline" size={23} color="#64B5FF" />
+  <Text style={styles.toolButtonText}>Export</Text>
+</TouchableOpacity>
+</View>
+</View>
+<ProgramSettings lines={fileContent} onSelect={selectSourceLine} />
   </ScrollView>
 );
 }
@@ -667,29 +776,50 @@ if (isGuest || !user || !isPro) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
-    padding: 24,
-    gap: 16,
-    paddingBottom: 80,
+    backgroundColor: '#050A0F',
   },
+  content: {
+    width: '100%', maxWidth: 980, alignSelf: 'center', padding: 24,
+    paddingBottom: 180, gap: 16,
+  },
+  contentCompact: { padding: 14, paddingBottom: 160, gap: 14 },
+  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4 },
+  headingIcon: { width: 34, alignItems: 'center' },
+  headingCopy: { flex: 1, alignItems: 'center' },
+  primaryActions: { flexDirection: 'row', gap: 12, alignItems: 'stretch' },
+  primaryActionsCompact: { gap: 10 },
+  primaryActionSlot: { flex: 1 },
+  importButton: { flex: 1, minHeight: 92, flexDirection: 'column', gap: 4 },
+  actionHint: { color: '#EAF4FF', fontSize: 12 },
+  scrollControl: {
+    minHeight: 54, paddingHorizontal: 16, borderRadius: 12,
+    backgroundColor: '#142536', borderColor: '#315575', borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scrollControlActive: { backgroundColor: '#0A84FF', borderColor: '#64B5FF' },
+  scrollControlText: { color: '#fff', fontSize: 17, fontWeight: '700' },
   title: {
     color: '#fff',
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 30,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   subtitle: {
-    color: '#888',
-    fontSize: 16,
-    marginBottom: 10,
+    color: '#B8C1CC',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
   },
   primaryButton: {
-    backgroundColor: '#007AFF',
-    padding: 18,
-    borderRadius: 14,
-    
+    minHeight: 54,
+    backgroundColor: '#087CF0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
-    gap: 12,
-
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
 secondaryButton: {
   padding: 12,
@@ -706,22 +836,24 @@ secondaryButton: {
     fontWeight: '700',
   },
   panel: {
-    backgroundColor: '#1b1b1b',
-    borderColor: '#333',
+    backgroundColor: '#0D1925',
+    borderColor: '#284865',
     borderWidth: 1,
     borderRadius: 14,
-    padding: 18,
-    minHeight: 130,
+    padding: 16,
+    gap: 12,
   },
+  previewPanel: { paddingBottom: 12 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   panelTitle: {
     color: '#fff',
     fontSize: 20,
     fontWeight: '700',
-    marginBottom: 8,
   },
   panelText: {
-    color: '#777',
+    color: '#D8E0E8',
     fontSize: 15,
+    lineHeight: 21,
   },
   previewHeader: {
     flexDirection: 'row',
@@ -729,7 +861,16 @@ secondaryButton: {
     justifyContent: 'space-between',
     gap: 12,
   },
+  partControlRow: { flexDirection: 'row', alignItems: 'stretch', gap: 9 },
+  rotationButton: { flex: 1, minHeight: 48, borderRadius: 10, backgroundColor: '#6D28D9', borderColor: '#A78BFA', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  rotationButtonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  modeButton: { flex: 1.25, minHeight: 48, borderRadius: 10, backgroundColor: '#087CF0', borderColor: '#64B5FF', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modeButtonActive: { backgroundColor: '#075985', borderColor: '#22D3EE', borderWidth: 2 },
+  modeButtonText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  partControlDisabled: { opacity: 0.38 },
+  partModeNotice: { color: '#C4CFDA', fontSize: 13, textAlign: 'center' },
   idToggle: {
+    minHeight: 44,
     backgroundColor: '#333',
     borderColor: '#555',
     borderWidth: 1,
@@ -752,6 +893,13 @@ secondaryButton: {
     gap: 10,
     marginBottom: 10,
   },
+  legendHeading: {
+    color: '#F2F2F7',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 3,
+  },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -765,6 +913,23 @@ secondaryButton: {
   legendText: {
     color: '#aaa',
     fontSize: 11,
+  },
+  geometryLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  zoomRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  zoomButton: { flex: 1, minHeight: 48, backgroundColor: '#087CF0', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  zoomButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  zoomReadout: { minWidth: 66, borderRadius: 10, backgroundColor: '#07111B', alignItems: 'center', justifyContent: 'center' },
+  zoomReadoutText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  fitButton: { minWidth: 80, minHeight: 48, borderColor: '#168BFA', borderWidth: 1, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  fitButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  previewCanvas: { height: 240, maxHeight: 240, backgroundColor: '#050B12', borderColor: '#5A748D', borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
+  coordinateRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6 },
+  coordinateText: { color: '#C4CFDA', fontSize: 13 },
+  arcDirection: {
+    position: 'absolute',
+    color: '#35D0E5',
+    fontSize: 16,
+    fontWeight: '700',
   },
   pierceMarker: {
     position: 'absolute',
@@ -800,8 +965,30 @@ secondaryButton: {
   },
   inspectNotice: {
     color: '#C7C7CC',
-    fontSize: 12,
-    marginBottom: 10,
+    fontSize: 14,
+    lineHeight: 20,
   },
+  selectedSummary: { backgroundColor: '#152A3C', borderColor: '#284865', borderWidth: 1, borderRadius: 10, padding: 12, gap: 4 },
+  selectedTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  codeList: { maxHeight: 180, backgroundColor: '#07111B', borderRadius: 8, padding: 8 },
+  codeLine: { color: '#D8E0E8', fontSize: 14, lineHeight: 24, paddingHorizontal: 6 },
+  codeMotionLine: { color: '#64C8FF' },
+  codeLineSelected: { backgroundColor: '#214360', borderRadius: 4 },
+  moveNavigation: { flexDirection: 'row', justifyContent: 'space-between', gap: 16 },
+  navigationText: { color: '#64B5FF', fontSize: 15, fontWeight: '600', paddingVertical: 8 },
+  disabledText: { color: '#607080' },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  fieldGroup: { flexBasis: '46%', flexGrow: 1, gap: 6 },
+  fieldGroupFull: { flexBasis: '100%' },
+  fieldLabel: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  fieldInput: { minHeight: 48, color: '#fff', backgroundColor: '#162A3B', borderColor: '#42627D', borderWidth: 1, borderRadius: 9, paddingHorizontal: 13, fontSize: 16 },
+  editActions: { flexDirection: 'row', gap: 12 },
+  editActionsCompact: { gap: 10 },
+  editActionButton: { flex: 1 },
+  undoButton: { backgroundColor: '#E51F2D' },
+  toolActions: { flexDirection: 'row', gap: 10 },
+  toolActionsCompact: { gap: 8 },
+  toolButton: { flex: 1, minHeight: 54, borderColor: '#168BFA', borderWidth: 1, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  toolButtonText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center' },
 
 });

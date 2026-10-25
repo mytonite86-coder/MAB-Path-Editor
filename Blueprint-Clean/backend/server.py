@@ -403,9 +403,9 @@ PREMIUM_PACKAGES = {
     "mab_s1_payment": {
         "package_id": "mab_s1_payment",
         "product_id": "mab_s1",
-        "name": "M.A.B. S1 Path Editor",
+        "name": "M.A.B. S1.5",
         "description": (
-            "Unlock premium editing and export tools in M.A.B. S1."
+            "Mobile CNC path editing, lightweight nesting, and supported combined export."
         ),
         "amount": 30.00,
         "currency": "usd",
@@ -511,7 +511,7 @@ def build_checkout_return_urls(
                 base_url = (
                     f"{parsed.scheme}://{parsed.netloc}/MAB-Path-Editor"
                 )
-                return_target = f"{base_url}/profile"
+                return_target = f"{base_url}/path"
 
             elif product_id == "pathseal":
                 base_url = (
@@ -525,7 +525,7 @@ def build_checkout_return_urls(
             base_url = origin_url.rstrip("/")
 
             if product_id == "mab_s1":
-                return_target = f"{base_url}/profile"
+                return_target = f"{base_url}/path"
             else:
                 return_target = base_url
 

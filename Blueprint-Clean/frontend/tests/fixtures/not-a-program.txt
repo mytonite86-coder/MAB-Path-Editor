@@ -1,0 +1,2 @@
+This is ordinary text, not a controller program.
+Please run G01 X2 Y3 tomorrow.

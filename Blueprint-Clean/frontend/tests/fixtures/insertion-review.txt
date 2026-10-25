@@ -1,0 +1,7 @@
+(Synthetic insertion UI fixture; not a machine program)
+G21 G90 G91.1 G17 G40 G49 G54 G80 G94 F120
+M5
+G00 X-10 Y5
+G00 X20 Y30
+G01 X40 Y60
+M2
