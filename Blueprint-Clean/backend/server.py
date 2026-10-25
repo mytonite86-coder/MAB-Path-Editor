@@ -400,22 +400,22 @@ SUCCESSFUL_CHECKOUT_EVENTS = {
 }
 
 PREMIUM_PACKAGES = {
-    "mab_s1_monthly": {
-        "package_id": "mab_s1_monthly",
+    "mab_s1_purchase": {
+        "package_id": "mab_s1_purchase",
         "product_id": "mab_s1",
         "name": "M.A.B. S1 Path Editor",
         "description": (
             "Unlock premium editing and export tools in M.A.B. S1."
         ),
-        "amount": 7.99,
+        "amount": 30.00,
         "currency": "usd",
-        "billing_mode": "subscription",
-        "interval": "month",
+        "billing_mode": "purchase",
+        "interval": None,
         "perks": [
             "Unlimited G-code editing",
             "Export edited CNC files",
             "Copy edited G-code",
-            "M.A.B. S1 premium access while subscribed",
+            "Permanent M.A.B. S1 access with one-time purchase",
         ],
     },
     "pathseal_monthly": {

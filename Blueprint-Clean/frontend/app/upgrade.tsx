@@ -39,7 +39,7 @@ const handleSubscribe = async () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          package_id: 'mab_s1_monthly',
+          package_id: 'mab_s1_purchase',
           origin_url: originUrl,
         }),
       }
@@ -88,7 +88,7 @@ const handleSubscribe = async () => {
 />
 
       <Text style={styles.subtitle}>
-        Unlimited G-code editing, repair, copy, and export for $7.99 per month.
+        Unlimited G-code editing, repair, copy, and export for $30 one-time.
       </Text>
 
 
@@ -97,24 +97,19 @@ const handleSubscribe = async () => {
   <Text style={styles.featureItem}>✓ Unlimited G-code Editing</Text>
   <Text style={styles.featureItem}>✓ Repair Broken CNC Files</Text>
   <Text style={styles.featureItem}>✓ Export & Share G-code</Text>
-  <Text style={styles.featureItem}>✓ M.A.B. S1 Updates While Subscribed</Text>
+  <Text style={styles.featureItem}>✓ Permanent M.A.B. S1 Access</Text>
   </View>
 
       <TouchableOpacity
         style={styles.button}
         onPress={handleSubscribe}
       >
-        <Text style={styles.buttonText}>Subscribe • $7.99/month</Text>
+       <Text style={styles.buttonText}>Buy M.A.B. S1 • $30 One-Time</Text>
       </TouchableOpacity>
 
  
 
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={() => router.replace('/path')}
-      >
-        <Text style={styles.secondaryText}>Continue Demo</Text>
-      </TouchableOpacity>
+     
   
   <Text style={styles.copyright}>
   © 2026 M.A.B. Path Editor. All Rights Reserved.
