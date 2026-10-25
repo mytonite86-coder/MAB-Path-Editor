@@ -40,7 +40,7 @@ const handleSubscribe = async () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          package_id: 'mab_s1_purchase',
+          package_id: 'mab_s1_payment',
           origin_url: originUrl,
         }),
       }
