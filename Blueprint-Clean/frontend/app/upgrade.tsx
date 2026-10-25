@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
 import {
   Alert,
-  Image,
   Linking,
   Platform,
   StyleSheet,
@@ -9,12 +10,81 @@ import {
   TouchableOpacity,
   View,
   ScrollView,
+  TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '@/config/api';
 
+
 export default function Upgrade() {
   const router = useRouter();
+
+  const { refreshUser, isPro } = useAuth();
+  const { width } = useWindowDimensions();
+  const [activationCode, setActivationCode] = useState('');
+  const [activating, setActivating] = useState(false);
+
+  const showMessage = (title: string, message: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(message);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (activating) return;
+    if (isPro) {
+      showMessage('Already activated', 'Your M.A.B. S1 access is already active.');
+      return;
+    }
+
+    const code = activationCode.trim().toUpperCase();
+    if (!/^MAB1-[0-9A-F]{32}$/.test(code)) {
+      showMessage('Check your code', 'Enter the full MAB1 activation code from your Shopify email.');
+      return;
+    }
+
+    const token =
+      Platform.OS === 'web' && typeof window !== 'undefined'
+        ? window.sessionStorage.getItem('authToken')
+        : await AsyncStorage.getItem('authToken');
+
+    if (!token) {
+      showMessage('Sign in required', 'Sign in or create a M.A.B. account before activating your code.');
+      router.push('/auth');
+      return;
+    }
+
+    setActivating(true);
+    try {
+      const response = await fetch(`${API_URL}/api/premium/activate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || result?.success !== true) {
+        const detail = typeof result?.detail === 'string'
+          ? result.detail
+          : 'Unable to activate this code. Please check it and try again.';
+        throw new Error(detail);
+      }
+
+      await refreshUser();
+      setActivationCode('');
+      showMessage('M.A.B. activated', 'Permanent M.A.B. S1 access is active on your account.');
+      router.replace('/path');
+    } catch (error) {
+      showMessage('Activation error', error instanceof Error ? error.message : 'Activation failed.');
+    } finally {
+      setActivating(false);
+    }
+  };
 
 const handleSubscribe = async () => {
   try {
@@ -75,146 +145,179 @@ const handleSubscribe = async () => {
   }
 };
 
+
   return (
-    <ScrollView
-  contentContainerStyle={styles.container}
-  showsVerticalScrollIndicator={false}
->
-      <Text style={styles.title}>Unlock M.A.B. S1.5</Text>
+    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <Text style={styles.title}>M.A.B. S1.5 ACCESS</Text>
+      <Text style={styles.subtitle}>Activate an existing license or purchase permanent access.</Text>
+      {isPro && <Text style={styles.activeNotice}>✓ Your M.A.B. S1 access is already active.</Text>}
 
-      <Image
-  source={require("../assets/images/featuredgraphic.png")}
-  style={styles.featuredGraphic}
-  resizeMode="contain"
-/>
+      <View style={[styles.optionRow, width < 660 && styles.optionStack]}>
+        <View style={[styles.optionCard, width < 660 && styles.optionCardStack]} testID="mab-activation-card">
+          <Text style={styles.optionIcon}>✦</Text>
+          <Text style={styles.optionTitle}>Activate Access</Text>
+          <Text style={styles.optionDescription}>Purchased through Shopify? Enter the code from your email.</Text>
+          <TextInput
+            style={styles.codeInput}
+            value={activationCode}
+            onChangeText={setActivationCode}
+            placeholder="MAB1-..."
+            placeholderTextColor="#A6A6A6"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={37}
+            editable={!activating}
+            accessibilityLabel="Shopify activation code"
+            testID="mab-activation-code-input"
+          />
+          <TouchableOpacity
+            style={[styles.goldButton, activating && styles.buttonDisabled]}
+            onPress={handleActivate}
+            disabled={activating}
+            accessibilityRole="button"
+            testID="mab-activate-button"
+          >
+            <Text style={styles.goldButtonText}>{activating ? 'ACTIVATING...' : 'ACTIVATE'}</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Text style={styles.subtitle}>
-        Unlimited G-code editing, repair, copy, and export for $30 one-time.
-      </Text>
+        <View style={[styles.optionCard, width < 660 && styles.optionCardStack]} testID="mab-purchase-card">
+          <Text style={styles.optionIcon}>◆</Text>
+          <Text style={styles.optionTitle}>Purchase Access</Text>
+          <Text style={styles.price}>$30.00</Text>
+          <Text style={styles.optionDescription}>One-time payment. Permanent M.A.B. S1 access.</Text>
+          <TouchableOpacity
+            style={styles.goldButton}
+            onPress={isPro ? () => showMessage('Already unlocked', 'Your M.A.B. S1 access is already active.') : handleSubscribe}
+            accessibilityRole="button"
+            testID="mab-purchase-button"
+          >
+            <Text style={styles.goldButtonText}>BUY NOW</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-
- 
- <View style={styles.featureList}>
-  <Text style={styles.featureItem}>✓ Unlimited G-code Editing</Text>
-  <Text style={styles.featureItem}>✓ Repair Broken CNC Files</Text>
-  <Text style={styles.featureItem}>✓ Export & Share G-code</Text>
-  <Text style={styles.featureItem}>✓ Permanent M.A.B. S1 Access</Text>
-  </View>
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleSubscribe}
-      >
-       <Text style={styles.buttonText}>Buy M.A.B. S1 • $30 One-Time</Text>
-      </TouchableOpacity>
-
- 
-
-     
-  
-  <Text style={styles.copyright}>
-  © 2026 M.A.B. Path Editor. All Rights Reserved.
-  </Text>
-
-</ScrollView>
-     
-    
+      <Text style={styles.footerText}>Sign in to your M.A.B. account before purchasing or activating.</Text>
+      <Text style={styles.copyright}>© 2026 M.A.B. Path Editor. All Rights Reserved.</Text>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
- container: {
-  flex: 1,
-  backgroundColor: '#000',
-  alignItems: 'center',
-  padding: 24,
-  paddingTop: 40,
+  container: {
+    flexGrow: 1,
+    backgroundColor: '#050505',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    paddingVertical: 48,
   },
-
   title: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 20,
+    color: '#D9B65D',
+    fontSize: 30,
+    fontWeight: '800',
     textAlign: 'center',
+    marginBottom: 12,
   },
-
   subtitle: {
-    color: '#bbb',
-    fontSize: 18,
+    color: '#D8D0BC',
+    fontSize: 16,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
   },
-
-
-  featuredGraphic: {
-  width: "100%",
-  maxWidth: 2400,
-  height: 600,
-  
-  },
-
-  featureList: {
-  marginBottom: 10
-,
-  alignItems: "center",
-},
-
-featureItem: {
-  color: "#FFFFFF",
-  fontSize: 16,
-  marginBottom: 10,
-  fontWeight: "600",
-},
-
-  button: {
-    width: '100%',
-    maxWidth: 600,
-    backgroundColor: '#1976D2',
-    padding: 18,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-
-  buttonText: {
-    color: '#fff',
+  activeNotice: {
+    color: '#E4CF9A',
+    fontWeight: '700',
+    marginBottom: 22,
     textAlign: 'center',
-    fontSize: 18,
-    fontWeight: 'bold',
   },
-
-  secondaryButton: {
+  optionRow: {
     width: '100%',
-    maxWidth: 600,
+    maxWidth: 900,
+    flexDirection: 'row',
+    gap: 20,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+  },
+  optionStack: {
+    flexDirection: 'column',
+  },
+  optionCard: {
+    flex: 1,
+    minWidth: 0,
+    padding: 24,
+    gap: 12,
+    backgroundColor: '#101010',
+    borderColor: '#B9933C',
     borderWidth: 1,
-    borderColor: '#666',
-    padding: 18,
-    borderRadius: 8,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
-
-  secondaryText: {
-    color: '#ccc',
+  optionCardStack: {
+    flex: 0,
+    width: '100%',
+  },
+  optionIcon: {
+    color: '#D9B65D',
+    fontSize: 32,
+  },
+  optionTitle: {
+    color: '#F1D38A',
+    fontSize: 20,
+    fontWeight: '700',
     textAlign: 'center',
+  },
+  optionDescription: {
+    color: '#C8BEA6',
+    fontSize: 14,
+    textAlign: 'center',
+    minHeight: 44,
+  },
+  codeInput: {
+    width: '100%',
+    padding: 14,
+    backgroundColor: '#1B1B1B',
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#62502B',
+    borderRadius: 8,
+    fontSize: 15,
+    marginTop: 12,
+  },
+  price: {
+    color: '#F1D38A',
+    fontSize: 34,
+    fontWeight: '800',
+    marginTop: 10,
+  },
+  goldButton: {
+    width: '100%',
+    backgroundColor: '#D9B65D',
+    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    marginTop: 'auto',
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.65,
+  },
+  goldButtonText: {
+    color: '#16120B',
+    fontWeight: '800',
     fontSize: 16,
   },
-
-  price: {
-  fontSize: 32,
-  fontWeight: "700",
-  marginTop: 8,
+  footerText: {
+    color: '#AD9A73',
+    fontSize: 13,
+    marginTop: 28,
+    textAlign: 'center',
   },
-
-  priceNote: {
-  fontSize: 16,
-  marginTop: 4,
-  marginBottom: 20,
+  copyright: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 32,
+    textAlign: 'center',
   },
-
- copyright: {
-  marginTop: 24,
-  marginBottom: 12,
-  fontSize: 12,
-  color: "#666",
-  textAlign: "center",
-}, 
 });
