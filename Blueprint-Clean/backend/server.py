@@ -64,6 +64,16 @@ from activation_codes import (
 from shopify_delivery import (
     normalize_shopify_customer_email,
     send_shopify_activation_email,
+    send_shopify_fulfillment_email,
+)
+from fulfillment_router import build_fulfillment_route
+from fulfillment_store import (
+    ensure_fulfillment_indexes,
+    prepare_fulfillment,
+    claim_fulfillment,
+    get_fulfillment,
+    mark_fulfillment_failed,
+    mark_fulfillment_sent,
 )
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
@@ -86,6 +96,7 @@ users_collection = db.users
 
 activation_codes_collection = db.activation_codes
 shopify_order_states_collection = db.shopify_order_states
+shopify_fulfillments_collection = db.shopify_fulfillments
 
 from pydantic import BaseModel, Field
 
@@ -244,49 +255,167 @@ async def deliver_shopify_license(
     return "delivered"
 
 
+async def deliver_shopify_order(
+    shop_domain: str, order_id: str, email: str, route: dict
+):
+    """Send exactly the applicable sections for a verified paid order.
+
+    M.A.B. codes are always recovered from the original encrypted license
+    record, including when retrying a previous failed SMTP attempt.
+    """
+    await prepare_fulfillment(
+        shopify_fulfillments_collection, shop_domain, order_id, email, route
+    )
+    outbox = await claim_fulfillment(
+        shopify_fulfillments_collection, shop_domain, order_id
+    )
+    if outbox is None:
+        previous = await get_fulfillment(
+            shopify_fulfillments_collection, shop_domain, order_id
+        )
+        complete = bool(previous and previous.get("send_status") == "delivered")
+        return {
+            "status": "delivered" if complete else "delivery_in_progress",
+            "delivery_complete": complete,
+            "mab_license_quantity": route["mab_license_quantity"],
+            "product_type": route["product_type"],
+        }
+
+    claimed_keys = []
+    activation_codes = []
+    sections = []
+    try:
+        # Check after claiming the order, before any external delivery.
+        hold = await get_shopify_order_state(
+            shopify_order_states_collection, shop_domain, order_id
+        )
+        if hold and hold.get("state") in {"cancelled", "refunded"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Order requires commerce review before delivery.",
+            )
+
+        for unit in range(1, route["mab_license_quantity"] + 1):
+            key = shopify_license_key(shop_domain, order_id, unit)
+            record = await claim_shopify_activation_delivery(
+                activation_codes_collection, key
+            )
+            if record is None:
+                prior = await activation_codes_collection.find_one({
+                    "shopify_license_key": key,
+                })
+                if prior and prior.get("delivery_status") == "delivered":
+                    continue
+                raise HTTPException(
+                    status_code=503,
+                    detail="Activation delivery is already in progress.",
+                )
+            claimed_keys.append(key)
+            activation_codes.append({
+                "unit": unit,
+                "activation_code": decrypt_delivery_code(
+                    record["encrypted_delivery_code"]
+                ),
+            })
+
+        if activation_codes:
+            sections.append("mab_s1_activation")
+        if route["services"]:
+            sections.append("service_scheduling")
+
+        # No new email for a legacy order whose codes were already sent.
+        provider_id = "previous_activation_delivery"
+        if sections:
+            provider_id = await asyncio.to_thread(
+                send_shopify_fulfillment_email,
+                email,
+                order_id,
+                activation_codes,
+                route["services"],
+                route["timezone"],
+            )
+
+        for key in claimed_keys:
+            if not await mark_shopify_activation_delivered(
+                activation_codes_collection, key
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail="Activation delivery confirmation is pending.",
+                )
+
+        if not await mark_fulfillment_sent(
+            shopify_fulfillments_collection,
+            shop_domain, order_id, provider_id, sections,
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Fulfillment delivery confirmation is pending.",
+            )
+    except Exception as exc:
+        for key in claimed_keys:
+            await mark_shopify_activation_delivery_failed(
+                activation_codes_collection, key
+            )
+        await mark_fulfillment_failed(
+            shopify_fulfillments_collection, shop_domain, order_id,
+            error_type=type(exc).__name__,
+        )
+        if isinstance(exc, HTTPException):
+            raise
+        logger.exception(
+            "S&K Shopify fulfillment failed for order %s.", order_id
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Order email delivery is temporarily unavailable.",
+        ) from exc
+
+    return {
+        "status": "delivered",
+        "mab_license_quantity": route["mab_license_quantity"],
+        "product_type": route["product_type"],
+        "delivery_complete": True,
+    }
+
+
 @api_router.post("/shopify/webhooks/orders-paid")
 async def shopify_order_paid(request: Request):
-    """Issue and deliver licenses from a verified eligible paid order."""
-    order, shop_domain = await verified_shopify_webhook(request, "orders/paid")
+    """Route authenticated paid orders to license and/or service email."""
+    order, shop_domain = await verified_shopify_webhook(
+        request, "orders/paid"
+    )
     order_id = require_shopify_order_id(order)
 
     if str(order.get("financial_status") or "").lower() != "paid":
         return {"status": "ignored", "reason": "not_paid"}
-
     if order.get("cancelled_at") is not None:
-        return {
-            "status": "ignored",
-            "reason": "order_cancelled",
-        }
-
+        return {"status": "ignored", "reason": "order_cancelled"}
     if order.get("refunds"):
-        return {
-            "status": "ignored",
-            "reason": "order_refunded",
-        }
+        return {"status": "ignored", "reason": "order_refunded"}
 
     hold = await get_shopify_order_state(
-        shopify_order_states_collection,
-        shop_domain,
-        order_id,
+        shopify_order_states_collection, shop_domain, order_id
     )
     if hold and hold.get("state") in {"cancelled", "refunded"}:
         return {"status": "ignored", "reason": "commerce_review_required"}
 
-    mab_quantity = mab_license_quantity(order)
-
-    if mab_quantity == 0:
-        return {"status": "ignored", "reason": "not_mab_order"}
+    try:
+        route = build_fulfillment_route(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if route["product_type"] == "ignored":
+        return {"status": "ignored", "reason": "not_supported_product"}
 
     try:
         delivery_email = normalize_shopify_customer_email(order)
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=422,
-            detail="A valid purchaser email is required for activation delivery.",
-        )
+            detail="A valid purchaser email is required for fulfillment.",
+        ) from exc
 
-    for unit in range(1, mab_quantity + 1):
+    for unit in range(1, route["mab_license_quantity"] + 1):
         await issue_shopify_activation_code(
             activation_codes_collection,
             shop_domain,
@@ -295,16 +424,9 @@ async def shopify_order_paid(request: Request):
             delivery_email=delivery_email,
         )
 
-    results = []
-    for unit in range(1, mab_quantity + 1):
-        results.append(await deliver_shopify_license(shop_domain, order_id, unit))
-    return {
-        "status": "delivered",
-        "mab_license_quantity": mab_quantity,
-        "delivery_complete": all(
-            result in {"delivered", "already_delivered"} for result in results
-        ),
-    }
+    return await deliver_shopify_order(
+        shop_domain, order_id, delivery_email, route
+    )
 
 
 async def record_shopify_commerce_hold(
@@ -1697,6 +1819,7 @@ async def initialize_license_indexes():
     """Create the uniqueness boundaries required for safe license handling."""
     await ensure_activation_indexes(activation_codes_collection)
     await ensure_shopify_order_state_indexes(shopify_order_states_collection)
+    await ensure_fulfillment_indexes(shopify_fulfillments_collection)
 
 
 @app.on_event("shutdown")
