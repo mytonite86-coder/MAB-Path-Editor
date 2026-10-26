@@ -1,4 +1,5 @@
 import { encodeTextDocument, importControllerDocument, interpretToolpath, parseTextDocument, type InterpretedPoint, type TextDocument } from './gcodeDocument.ts';
+import { rotateG91PartVectors, type QuarterTurn } from './quarterTurnG91.ts';
 
 export type StartCorner = 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
 export type NestPoint = InterpretedPoint & { x: number; y: number };
@@ -6,6 +7,9 @@ export type NestPart = {
   id: number;
   name: string;
   source: TextDocument;
+  /** An optional rotated working copy; never edits the imported source. */
+  transformedSource?: TextDocument;
+  quarterTurns?: number;
   sourceBytes: Uint8Array;
   original: InterpretedPoint[];
   offsetX: number;
@@ -134,6 +138,29 @@ export function translateActivePart(session: NestSession, deltaX: number, deltaY
   return { ...session, active: { ...session.active, offsetX: session.active.offsetX + deltaX, offsetY: session.active.offsetY + deltaY } };
 }
 
+/** Rotate just the active part's G91 vectors, keeping its original CNC file intact. */
+export function rotateActiveNestPart(session: NestSession, turn: QuarterTurn): NestSession {
+  const active = session.active;
+  if (!active) throw new Error('Select an active, unconfirmed part before rotating.');
+  const working = active.transformedSource ?? active.source;
+  const profile = inspectNestProgram(working);
+  const indexes = [...new Set(interpretToolpath(working.lines)
+    .map(point => point.line)
+    .filter((line): line is number => line !== undefined && line >= profile.headerEnd && line < profile.terminator))];
+  if (indexes.length === 0) throw new Error('No compatible G91 motion vectors in this part.');
+  const transformedSource = rotateG91PartVectors(working, indexes, turn);
+  inspectNestProgram(transformedSource);
+  const original = interpretToolpath(transformedSource.lines);
+  if (original.length < 2 || original.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+    throw new Error('Rotated geometry is unsupported; part was not changed.');
+  }
+  const quarterTurns = ((active.quarterTurns ?? 0) + (turn === 'ccw' ? 1 : 3)) % 4;
+  return {
+    ...session,
+    active: { ...active, transformedSource, original, quarterTurns },
+  };
+}
+
 export function confirmActivePart(session: NestSession): NestSession {
   if (!session.active) throw new Error('There is no active part to confirm.');
   return { ...session, anchored: [...session.anchored, session.active], active: undefined };
@@ -222,6 +249,8 @@ export function exportReadiness(session: NestSession): string | null {
       if (inspectNestProgram(part.source).signature !== session.family.signature) return FAMILY_ERROR;
     }
   } catch (error) { return error instanceof Error ? error.message : FAMILY_ERROR; }
+  const unsafe = nestWarnings(session);
+  if (unsafe.length) return `Resolve plate bounds/intersections before export: ${unsafe.join(' ')}`;
   return null;
 }
 
@@ -234,9 +263,10 @@ export function exportCombinedNest(session: NestSession): TextDocument {
   let current = session.plate.start;
 
   for (const part of session.anchored) {
-    const profile = inspectNestProgram(part.source);
+    const working = part.transformedSource ?? part.source;
+    const profile = inspectNestProgram(working);
     output.push(`G00X${coordinate(part.offsetX - current.x)}Y${coordinate(part.offsetY - current.y)}`);
-    output.push(...part.source.lines.slice(profile.headerEnd, profile.terminator));
+    output.push(...working.lines.slice(profile.headerEnd, profile.terminator));
     const end = positionedPoints(part).at(-1)!;
     current = { x: end.x, y: end.y };
   }

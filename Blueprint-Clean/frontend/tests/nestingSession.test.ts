@@ -19,6 +19,7 @@ import {
   nestWarnings,
   positionedPoints,
   rapidConnections,
+  rotateActiveNestPart,
   translateActivePart,
 } from '../utils/nestingSession.ts';
 
@@ -163,4 +164,32 @@ test('real Axe CNC family composes two and three programs, rejects NIF, re-impor
     assertSourcesPreserved(session);
     assert.deepEqual(bytes.slice(0, count).map(value => Buffer.from(value).toString('hex')), before);
   }
+});
+
+test('90 degree nest rotation changes preview AND combined machine-code, not the imported source', () => {
+  const input = part('Rect', 2, 1).document;
+  let nest = importActivePart(createNestSession(40, 40, 'bottom-left'), input, 'Rect');
+  const before = positionedPoints(nest.active!);
+  nest = rotateActiveNestPart(nest, 'ccw');
+  assert.equal(nest.active?.transformedSource?.lines[5], 'G01X0Y2');
+  assert.equal(nest.active?.transformedSource?.lines[6], 'G01X-1Y0');
+  assert.notDeepEqual(positionedPoints(nest.active!), before);
+  assert.deepEqual(nest.active?.source.lines, input.lines);
+  assert.match(exportReadiness(confirmActivePart(nest))!, /plate bounds/);
+  nest = confirmActivePart(translateActivePart(nest, 10, 10));
+  assert.equal(exportReadiness(nest), null);
+  const exported = serializeTextDocument(exportCombinedNest(nest));
+  assert.match(exported, /G01X0Y2/);
+  assert.doesNotThrow(() => importControllerDocument(new TextEncoder().encode(exported)));
+  assertSourcesPreserved(nest);
+});
+test('four exact nest quarter turns restore input; overlap cannot be exported', () => {
+  let nest = importActivePart(createNestSession(40, 40, 'bottom-left'), part('Square').document, 'Square');
+  const initial = nest.active!.source.lines.join('\n');
+  for (let i = 0; i < 4; i++) nest = rotateActiveNestPart(nest, 'ccw');
+  assert.equal(nest.active?.transformedSource?.lines.join('\n'), initial);
+  nest = confirmActivePart(nest);
+  nest = confirmActivePart(duplicateLastPart(nest));
+  assert.match(exportReadiness(nest)!, /intersections/);
+  assert.throws(() => exportCombinedNest(nest), /intersections/);
 });

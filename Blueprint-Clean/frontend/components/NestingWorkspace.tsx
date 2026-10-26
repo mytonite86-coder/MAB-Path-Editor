@@ -16,6 +16,7 @@ import {
   nestWarnings,
   positionedPoints,
   rapidConnections,
+  rotateActiveNestPart,
   translateActivePart,
   type NestSession,
   type StartCorner,
@@ -139,6 +140,14 @@ export default function NestingWorkspace({ canExport, onUpgrade }: { canExport: 
     {warnings.map(warning => <Text key={warning} accessibilityRole="alert" style={styles.warning}>{warning}</Text>)}
     {!!message && <Text style={styles.copy}>{message}</Text>}
     {session.active ? <View style={styles.row}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Rotate active nest part 90 degrees counterclockwise" style={styles.choice} onPress={() => {
+        try { setSession(rotateActiveNestPart(session, 'ccw')); setMessage('Rotated active part 90° CCW in CNC code. Reposition on the plate and check warnings before confirmation.'); }
+        catch (error) { setMessage(error instanceof Error ? error.message : 'Rotation stopped safely.'); }
+      }}><Text style={styles.copy}>↺ 90° CCW</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Rotate active nest part 90 degrees clockwise" style={styles.choice} onPress={() => {
+        try { setSession(rotateActiveNestPart(session, 'cw')); setMessage('Rotated active part 90° CW in CNC code. Reposition on the plate and check warnings before confirmation.'); }
+        catch (error) { setMessage(error instanceof Error ? error.message : 'Rotation stopped safely.'); }
+      }}><Text style={styles.copy}>90° CW ↻</Text></TouchableOpacity>
       <TouchableOpacity style={styles.primary} onPress={() => { setSession(confirmActivePart(session)); setMessage('Placement anchored. Add this part again, import a new part, or finish.'); }}><Text style={styles.primaryText}>CONFIRM PLACEMENT</Text></TouchableOpacity>
       <TouchableOpacity style={styles.choice} onPress={() => { setSession(cancelActivePart(session)); setMessage('Unconfirmed placement cancelled; anchored parts were unchanged.'); }}><Text style={styles.copy}>Cancel placement</Text></TouchableOpacity>
     </View> : <View style={styles.row}>
