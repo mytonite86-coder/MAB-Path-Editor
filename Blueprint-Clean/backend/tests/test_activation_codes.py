@@ -260,6 +260,17 @@ def test_duplicate_order_with_changed_email_requires_review(
     run(scenario())
 
 
+@pytest.mark.parametrize("order", [
+    make_order(financial_status="pending"),
+    make_order(cancelled_at="2026-10-24T00:00:00Z"),
+    make_order(refunds=[{"id": 99}]),
+    make_order(line_items=[]),
+    make_order(line_items=[{
+        "product_id": 999,
+        "variant_id": VARIANT_ID,
+        "quantity": 1,
+    }]),
+])
 def test_ineligible_orders_fail_closed(configured_server, monkeypatch, order):
     monkeypatch.setattr(
         server, "send_shopify_fulfillment_email",
