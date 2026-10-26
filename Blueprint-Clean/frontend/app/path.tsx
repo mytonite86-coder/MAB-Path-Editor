@@ -36,7 +36,7 @@ import ProgramSettings from '../components/ProgramSettings';
 import NestingWorkspace from '../components/NestingWorkspace';
 import { reviewMeasurementEdit } from '../utils/measurementEdit';
 import { messerProgrammedNestProfile } from '../utils/messerProgrammedNest';
-import { rotateVerifiedProgramPart } from '../utils/programPartRotation';
+import { rotateG91PartVectors, type QuarterTurn } from '../utils/quarterTurnG91';
 
 type MovementMode = 'G00' | 'G01' | 'G02' | 'G03';
 
@@ -138,44 +138,35 @@ const selectPreviewPoint = (point: InterpretedPoint) => {
   if (point.line !== undefined) selectSourceLine(point.line);
 };
 
-const rotateSelectedPart = (degrees: number, addUndo: boolean) => {
+const rotateSelectedPart = (turn: QuarterTurn) => {
   const partId = selectedPartRef.current;
-  if (!partId) { setEditError('Select a verified whole part before rotating.'); return false; }
+  if (!partId) { setEditError('Select a verified whole part before rotating.'); return; }
   try {
     const before = documentRef.current;
     const structure = reconstructProgramStructure(before.lines, messerProgrammedNestProfile);
-    const next = rotateVerifiedProgramPart(before, structure, partId, degrees);
-    if (addUndo) setHistory(previous => [...previous, before]);
+    if (structure.status !== 'verified') throw new Error('Only verified Messer-programmed part identities may rotate.');
+    const part = structure.parts.find(candidate => candidate.id === partId);
+    if (!part) throw new Error('Selected part identity no longer exists.');
+    const indexes = [...new Set(part.orderedEventOrders
+      .filter(order => !!structure.events[order]?.geometry)
+      .map(order => structure.events[order].sourceLine))];
+    const next = rotateG91PartVectors(before, indexes, turn);
+    const checked = reconstructProgramStructure(next.lines, messerProgrammedNestProfile);
+    if (checked.status !== 'verified' || checked.parts.length !== structure.parts.length) {
+      throw new Error('Rotation would break verified part identity. Original CNC file was preserved.');
+    }
+    setHistory(previous => [...previous, before]);
     documentRef.current = next;
     setFileContent(next.lines);
-    setEditError('');
-    return true;
+    const hasFollowingPart = structure.parts.findIndex(candidate => candidate.id === partId) < structure.parts.length - 1;
+    setEditError(hasFollowingPart
+      ? '90° vector rotation applied. Warning: G91 downstream part positions may shift. Review/reposition every following part before export or cutting.'
+      : '90° vector rotation applied to selected part CNC code. Check placement and plate clearance before export or cutting.');
   } catch (error) {
     setEditError(error instanceof Error ? error.message : 'Selected part could not be rotated safely.');
-    return false;
   }
 };
 
-const beginRotation = (degrees: number) => {
-  if (!selectedPartRef.current) { setEditError('Select a verified whole part before rotating.'); return; }
-  holdAppliedRef.current = false;
-  holdDelayRef.current = setTimeout(() => {
-    holdAppliedRef.current = true;
-    const before = documentRef.current;
-    if (!rotateSelectedPart(degrees, false)) return;
-    setHistory(previous => [...previous, before]);
-    holdRepeatRef.current = setInterval(() => rotateSelectedPart(degrees, false), 90);
-  }, 350);
-};
-
-const endRotation = (degrees: number) => {
-  if (holdDelayRef.current) clearTimeout(holdDelayRef.current);
-  if (holdRepeatRef.current) clearInterval(holdRepeatRef.current);
-  holdDelayRef.current = null;
-  holdRepeatRef.current = null;
-  if (!holdAppliedRef.current) rotateSelectedPart(degrees, true);
-  holdAppliedRef.current = false;
-};
 const preview = fitPreview(toolpath, previewWidth, 240, zoom, panX, panY);
 const origin = preview.project({ x: 0, y: 0 });
 const measured = selectedLine === null ? null : selectedMoveMeasurements(toolpath, selectedLine);
@@ -303,8 +294,7 @@ return (
         accessibilityLabel="Rotate selected part counterclockwise"
         disabled={editorMode !== 'part' || !selectedPartId}
         style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
-        onPressIn={() => beginRotation(-1)}
-        onPressOut={() => endRotation(-1)}
+        onPress={() => rotateSelectedPart('ccw')}
       ><Text style={styles.rotationButtonText}>↺ CCW</Text></TouchableOpacity>
       <TouchableOpacity
         accessibilityRole="switch"
@@ -323,8 +313,7 @@ return (
         accessibilityLabel="Rotate selected part clockwise"
         disabled={editorMode !== 'part' || !selectedPartId}
         style={[styles.rotationButton, (editorMode !== 'part' || !selectedPartId) && styles.partControlDisabled]}
-        onPressIn={() => beginRotation(1)}
-        onPressOut={() => endRotation(1)}
+        onPress={() => rotateSelectedPart('cw')}
       ><Text style={styles.rotationButtonText}>CW ↻</Text></TouchableOpacity>
     </View>
     <Text style={styles.partModeNotice}>
