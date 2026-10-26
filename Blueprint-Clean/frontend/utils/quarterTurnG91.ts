@@ -89,6 +89,11 @@ export function rotateG91PartVectors(
       if ([0, 1, 2, 3].includes(code)) motionMode = code;
     }
     if (!targets.has(index)) continue;
+    // Code following a parenthesized inline comment could otherwise escape
+    // rewriting, so reject this uncommon format rather than emit a partial turn.
+    if (lines[index].includes('(') || lines[index].includes(')')) {
+      throw new Error('Inline parenthesized comments on a motion line require review before rotation.');
+    }
     if (distanceMode !== 'incremental' || arcCenterMode !== 'incremental') {
       throw new Error('Part rotation requires G91 vectors with incremental I/J arc centers.');
     }
