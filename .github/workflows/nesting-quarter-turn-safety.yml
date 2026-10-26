@@ -1,0 +1,33 @@
+name: G91 quarter-turn nesting safety
+
+on:
+  push:
+    branches:
+      - feature/nesting-g91-part-90-degree-vectors
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rotation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: Blueprint-Clean/frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: Blueprint-Clean/frontend
+        run: npm ci --ignore-scripts
+      - name: G91 golden-file rotation tests
+        working-directory: Blueprint-Clean/frontend
+        run: node --test tests/quarterTurnG91.test.ts
+      - name: Existing CNC parser and nesting tests
+        working-directory: Blueprint-Clean/frontend
+        run: npm run test:gcode
+      - name: Check TypeScript
+        working-directory: Blueprint-Clean/frontend
+        run: npx tsc --noEmit
