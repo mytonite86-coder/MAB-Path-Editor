@@ -37,22 +37,27 @@ async def prepare_fulfillment(collection, shop_domain, order_id, email, route):
         "sent_sections": [],
         "created_at": datetime.now(timezone.utc),
     }
+    # Atomic upsert makes repeated sequential deliveries idempotent. The
+    # compound unique index also protects against concurrent first deliveries.
     try:
-        await collection.insert_one(doc)
-        return doc
+        await collection.update_one(
+            identity, {"$setOnInsert": doc}, upsert=True
+        )
     except DuplicateKeyError:
-        existing = await collection.find_one(identity)
-        if existing is None:
-            raise RuntimeError("Concurrent fulfillment record unavailable.")
-        for field in (
-            "customer_email", "product_type", "mab_license_quantity",
-            "services", "timezone",
-        ):
-            if existing.get(field) != doc.get(field):
-                raise RuntimeError(
-                    "Shopify order fulfillment changed. Manual review required."
-                )
-        return existing
+        # Another webhook inserted the same order in parallel.
+        pass
+    existing = await collection.find_one(identity)
+    if existing is None:
+        raise RuntimeError("Fulfillment record unavailable.")
+    for field in (
+        "customer_email", "product_type", "mab_license_quantity",
+        "services", "timezone",
+    ):
+        if existing.get(field) != doc.get(field):
+            raise RuntimeError(
+                "Shopify order fulfillment changed. Manual review required."
+            )
+    return existing
 
 
 async def claim_fulfillment(collection, shop_domain, order_id):
