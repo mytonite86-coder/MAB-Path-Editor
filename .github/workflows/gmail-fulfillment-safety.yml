@@ -1,0 +1,33 @@
+name: Gmail fulfillment safety
+
+on:
+  push:
+    branches:
+      - feature/shopify-fulfillment-gmail-api-router
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-fulfillment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fulfillment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: Blueprint-Clean/backend
+        run: python -m pip install -r requirements.txt
+
+      - name: Compile backend Python
+        run: python -m compileall -q Blueprint-Clean/backend
+
+      - name: Test isolated Shopify fulfillment
+        working-directory: Blueprint-Clean/backend
+        run: python -m pytest -q tests/test_activation_codes.py
