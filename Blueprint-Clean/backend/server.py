@@ -24,6 +24,7 @@ from models import (
     CreateCheckoutSessionRequest,
     CreateCheckoutSessionResponse,
     PaymentStatusResponse,
+    CreateSvgSubscriptionCheckoutRequest,
     SvgSubscriptionQuoteRequest,
     SvgSubscriptionQuoteResponse,
 )
@@ -78,6 +79,12 @@ from fulfillment_store import (
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
 from svg_subscription import (
+    SVG_PRICE_IDS,
+    SVG_TOOL_PRICE_ENV,
+    build_svg_checkout_plan,
+    build_svg_checkout_session_parameters,
+    parse_svg_product_ids,
+    plan_svg_entitlement_transition,
     SvgSubscriptionSelectionError,
     quote_svg_subscription,
 )
@@ -510,7 +517,10 @@ ALL_PRODUCTS_LIFETIME_PROMOTION_CODE_ID = os.environ.get(
 ).strip()
 SETTLED_PAYMENT_STATUSES = {"paid", "no_payment_required"}
 MAB_SUBSCRIPTION_ENTITLEMENT = "mab_s1_subscription"
+# Purchase identifiers map only to the existing permanent S1 entitlement.
+MAB_PAYMENT_ENTITLEMENTS = {"mab_s1": "mab_s1", "mab_s1.5": "mab_s1"}
 MAB_PERMANENT_ENTITLEMENTS = {
+    "mab_s1",
     "mab_s1.5",
     "founder_lifetime",
     "complimentary_lifetime",
@@ -540,24 +550,7 @@ PREMIUM_PACKAGES = {
             "Permanent M.A.B. S1 access with one-time payment",
         ],
     },
-    "pathseal_monthly": {
-        "package_id": "pathseal_monthly",
-        "product_id": "pathseal",
-        "name": "PathSeal Founder Access",
-        "description": (
-            "Scan, review, repair, validate, and download cleaned SVG files."
-        ),
-        "amount": 9.99,
-        "currency": "usd",
-        "billing_mode": "subscription",
-        "interval": "month",
-        "perks": [
-            "Unlimited PathSeal repairs",
-            "Numbered open-path review",
-            "Validated clean SVG downloads",
-            "Founder launch pricing",
-        ],
-    },
+
 }
 
 
@@ -594,6 +587,7 @@ def build_user_response(
         username=user["username"],
         is_premium=user.get("is_premium", False),
         entitlements=get_user_entitlements(user),
+        svg_lifetime_entitlements=user.get("svg_lifetime_entitlements", []),
         created_at=user["created_at"],
     )
 
@@ -698,6 +692,10 @@ def stripe_dict(stripe_object) -> dict:
 
     if isinstance(stripe_object, dict):
         return dict(stripe_object)
+
+    to_dict = getattr(stripe_object, "to_dict", None)
+    if callable(to_dict):
+        return to_dict()
 
     to_dict_recursive = getattr(
         stripe_object,
@@ -821,7 +819,7 @@ async def revoke_product_entitlement(
         return
 
     await users_collection.update_one(
-        {"_id": ObjectId(user_id)},
+        {"_id": ObjectId(user_id), "svg_lifetime_entitlements": {"$ne": product_id}},
         {
             "$pull": {
                 "entitlements": product_id,
@@ -847,7 +845,7 @@ async def apply_premium_upgrade(
         "mab_s1",
     )
 
-    if product_id != "mab_s1":
+    if product_id not in MAB_PAYMENT_ENTITLEMENTS or transaction.get("user_id") != user_id:
         return False
 
     if transaction.get("processed_upgrade"):
@@ -901,7 +899,7 @@ async def apply_premium_upgrade(
 
     await grant_product_entitlement(
         user_id,
-        "mab_s1",
+        MAB_PAYMENT_ENTITLEMENTS[product_id],
     )
 
     return True
@@ -947,6 +945,118 @@ async def sync_product_subscription(
         user_id = user_id or transaction.get("user_id")
         package_id = package_id or transaction.get("package_id")
         product_id = product_id or transaction.get("product_id")
+
+    if transaction and transaction.get("package_id") == "svg_micro_eco_lifetime":
+        return False
+
+    if package_id == "svg_micro_eco_selection":
+        if not transaction or not user_id:
+            logger.warning(
+                "Could not resolve SVG subscription owner: %s",
+                subscription_id,
+            )
+            return False
+
+        if transaction.get("user_id") != user_id or (
+            transaction.get("subscription_id")
+            and transaction["subscription_id"] != subscription_id
+        ):
+            logger.warning("Rejected mismatched SVG subscription owner or identity")
+            return False
+
+        try:
+            current_product_ids = parse_svg_product_ids(
+                metadata.get("selected_product_ids")
+            )
+            previous_product_ids = list(
+                transaction.get("selected_product_ids") or []
+            )
+            if not previous_product_ids:
+                previous_metadata = transaction.get(
+                    "subscription_metadata"
+                ) or transaction.get("metadata") or {}
+                previous_product_ids = parse_svg_product_ids(
+                    previous_metadata.get("selected_product_ids")
+                )
+        except SvgSubscriptionSelectionError as exc:
+            logger.warning(
+                "Rejected SVG subscription metadata for %s: %s",
+                subscription_id,
+                str(exc),
+            )
+            return False
+
+        if not transaction.get("subscription_id") and set(current_product_ids) != set(previous_product_ids):
+            logger.warning("Rejected SVG selection inconsistent with pending checkout")
+            return False
+
+        if not current_product_ids:
+            logger.warning(
+                "Rejected empty SVG subscription selection: %s",
+                subscription_id,
+            )
+            return False
+
+        subscription_status = stripe_value(subscription, "status", "")
+        transition = plan_svg_entitlement_transition(
+            previous_product_ids,
+            current_product_ids,
+            subscription_status,
+        )
+        now_iso = datetime.now(timezone.utc).isoformat()
+        update_fields = {
+            "package_id": package_id,
+            "product_id": "svg_micro_eco_selection",
+            "subscription_id": subscription_id,
+            "subscription_status": subscription_status,
+            "selected_product_ids": current_product_ids,
+            "subscription_metadata": metadata,
+            "updated_at": now_iso,
+        }
+        if transition["action"] == "grant":
+            update_fields["access_active"] = True
+        elif transition["action"] == "revoke":
+            update_fields["access_active"] = False
+        if event_type:
+            update_fields["last_event_type"] = event_type
+
+        await payment_transactions_collection.update_one(
+            {"_id": transaction["_id"]},
+            {"$set": update_fields},
+        )
+
+        for entitlement_id in transition["grant"]:
+            await grant_product_entitlement(user_id, entitlement_id)
+
+        for entitlement_id in transition["revoke"]:
+            user = await users_collection.find_one(
+                {"_id": ObjectId(user_id)},
+                {"entitlements": 1},
+            )
+            if ALL_PRODUCTS_LIFETIME_ENTITLEMENT in set(
+                (user or {}).get("entitlements") or []
+            ):
+                continue
+            other_active_subscription = (
+                await payment_transactions_collection.find_one(
+                    {
+                        "_id": {"$ne": transaction["_id"]},
+                        "user_id": user_id,
+                        "$or": [
+                            {"package_id": "svg_micro_eco_selection", "selected_product_ids": entitlement_id},
+                            {"product_id": entitlement_id},
+                        ],
+                        "access_active": True,
+                    }
+                )
+            )
+            if not other_active_subscription:
+                await revoke_product_entitlement(
+                    user_id,
+                    entitlement_id,
+                )
+
+        return True
 
     if not product_id:
         product_id = {
@@ -1155,6 +1265,33 @@ async def process_checkout_session(
         )
     )
 
+    if transaction.get("package_id") == "svg_micro_eco_lifetime":
+        # Only signed success events may fulfill lifetime purchases. Status polling
+        # cannot grant access, and metadata never chooses an unrecorded owner/SKU.
+        if event_type not in SUCCESSFUL_CHECKOUT_EVENTS:
+            return False
+        if (stripe_value(stripe_session, "payment_status") != "paid"
+            or stripe_value(stripe_session, "status") != "complete"
+            or stripe_value(stripe_session, "mode") != "payment"
+            or stripe_value(stripe_session, "currency") != "usd"
+            or stripe_value(stripe_session, "amount_total") != transaction.get("amount_total")
+            or metadata != transaction.get("metadata")):
+            return False
+        selected = parse_svg_product_ids(metadata.get("selected_product_ids"))
+        if (not selected or selected != transaction.get("selected_product_ids")
+            or metadata.get("user_id") != transaction.get("user_id")):
+            return False
+        result = await users_collection.update_one(
+            {"_id": ObjectId(transaction["user_id"])},
+            {"$addToSet": {"entitlements": {"$each": selected}, "svg_lifetime_entitlements": {"$each": selected}}},
+        )
+        if not result.matched_count:
+            return False
+        await payment_transactions_collection.update_one({"_id": transaction["_id"]}, {"$set": {
+            "access_active": True, "payment_status": "paid", "status": "complete", "lifetime_granted": True,
+        }})
+        return True
+
     product_id = (
         transaction.get("product_id")
         or metadata.get("product_id")
@@ -1166,6 +1303,10 @@ async def process_checkout_session(
         or metadata.get("billing_mode")
         or "payment"
     )
+
+    if (product_id in MAB_PAYMENT_ENTITLEMENTS and billing_mode == "payment"
+        and metadata.get("user_id", transaction["user_id"]) != transaction["user_id"]):
+        return False
 
     payment_status = stripe_value(
         stripe_session,
@@ -1251,8 +1392,9 @@ async def process_checkout_session(
             )
 
     if (
-        product_id == "mab_s1"
+        product_id in MAB_PAYMENT_ENTITLEMENTS
         and billing_mode == "payment"
+        and event_type != "checkout.session.async_payment_failed"
         and payment_status in SETTLED_PAYMENT_STATUSES
     ):
         return await apply_premium_upgrade(
@@ -1485,6 +1627,104 @@ async def get_svg_subscription_quote(
 
 
 @api_router.post(
+    "/payments/svg-subscription/checkout/session",
+    response_model=CreateCheckoutSessionResponse,
+)
+async def create_svg_subscription_checkout_session(
+    checkout_request: CreateSvgSubscriptionCheckoutRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+):
+    if os.environ.get("SVG_SUBSCRIPTION_CHECKOUT_ENABLED") != "1":
+        raise HTTPException(
+            status_code=503,
+            detail="SVG lifetime checkout is not enabled",
+        )
+
+    origin_url = validate_origin_url(checkout_request.origin_url)
+    success_url, cancel_url = build_checkout_return_urls(
+        origin_url,
+        "svg_micro_eco_lifetime",
+    )
+    configuration = {
+        environment_name: os.environ.get(environment_name, SVG_PRICE_IDS[pid])
+        for pid, environment_name in SVG_TOOL_PRICE_ENV.items()
+    }
+    integration_identifier = os.environ.get(
+        "STRIPE_SVG_INTEGRATION_IDENTIFIER",
+        "",
+    ).strip()
+    if not integration_identifier:
+        raise HTTPException(
+            status_code=503,
+            detail="SVG lifetime checkout is not configured",
+        )
+
+    try:
+        plan = build_svg_checkout_plan(
+            checkout_request.selected_product_ids,
+            configuration,
+        )
+        parameters = build_svg_checkout_session_parameters(
+            plan,
+            current_user["user_id"],
+            current_user["email"],
+            success_url,
+            cancel_url,
+            integration_identifier,
+        )
+    except SvgSubscriptionSelectionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe API key is not configured")
+    stripe_client = stripe.StripeClient(STRIPE_API_KEY)
+    try:
+        session = stripe_client.v1.checkout.sessions.create(parameters)
+    except stripe.error.StripeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to create SVG lifetime checkout session",
+        ) from exc
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    quote = plan["quote"]
+    transaction_doc = {
+        "session_id": session.id,
+        "payment_id": session.id,
+        "user_id": current_user["user_id"],
+        "email": current_user["email"],
+        "package_id": "svg_micro_eco_lifetime",
+        "product_id": "svg_micro_eco_lifetime",
+        "selected_product_ids": quote["selected_product_ids"],
+        "billing_mode": "payment",
+        "interval": None,
+        "customer_id": None,
+        "subscription_id": None,
+        "subscription_status": None,
+        "access_active": False,
+        "amount": quote["total_cents"] / 100,
+        "amount_total": quote["total_cents"],
+        "currency": quote["currency"],
+        "metadata": parameters["metadata"],
+        "status": "open",
+        "payment_status": "pending",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await payment_transactions_collection.insert_one(transaction_doc)
+
+    return CreateCheckoutSessionResponse(
+        url=session.url,
+        session_id=session.id,
+    )
+
+
+
+@api_router.post(
     "/payments/checkout/session",
     response_model=CreateCheckoutSessionResponse,
 )
@@ -1714,7 +1954,6 @@ async def stripe_webhook(request: Request):
             status_code=500,
             detail="Stripe webhook secret is not configured",
         )
-    configure_stripe()
 
     body = await request.body()
     signature = request.headers.get("Stripe-Signature")

@@ -1,189 +1,63 @@
-from decimal import Decimal, ROUND_HALF_UP
-
 from subscription_policy import pathseal_access_action
 
-
-SVG_TOOL_MONTHLY_CENTS = 999
-
+SVG_BUNDLE_ID = "svg_complete_bundle"
 SVG_TOOL_CATALOG = {
-    "pathseal": {
-        "name": "PathSeal",
-        "available": True,
-    },
-    "duplicate_geometry": {
-        "name": "Duplicate Line Remover",
-        "available": True,
-    },
-    "stray_node_cleaner": {
-        "name": "Stray Node Cleaner",
-        "available": False,
-    },
-    "overlapping_shape_repair": {
-        "name": "Overlapping Shape Repair",
-        "available": False,
-    },
-    "curve_repair": {
-        "name": "Curve Repair",
-        "available": False,
-    },
+    "pathseal": {"name": "PathSeal", "available": True},
+    "duplicate_geometry": {"name": "Duplicate Line Remover", "available": True},
+    "stray_node_cleaner": {"name": "Stray Node Cleaner", "available": True},
+    "overlapping_shape_repair": {"name": "Overlapping Shape Repair", "available": True},
+    "curve_repair": {"name": "Curve Repair", "available": True},
 }
-
-SVG_MULTI_TOOL_DISCOUNT_PERCENT = {
-    1: 0,
-    2: 5,
-    3: 10,
-    4: 15,
-    5: 20,
-}
-
-SVG_TOOL_PRICE_ENV = {
-    "pathseal": "STRIPE_PRICE_PATHSEAL_MONTHLY",
-    "duplicate_geometry": "STRIPE_PRICE_DUPLICATE_GEOMETRY_MONTHLY",
-    "stray_node_cleaner": "STRIPE_PRICE_STRAY_NODE_CLEANER_MONTHLY",
-    "overlapping_shape_repair": "STRIPE_PRICE_OVERLAPPING_SHAPE_REPAIR_MONTHLY",
-    "curve_repair": "STRIPE_PRICE_CURVE_REPAIR_MONTHLY",
-}
-
-SVG_DISCOUNT_COUPON_ENV = {
-    2: "STRIPE_COUPON_SVG_TWO_TOOLS",
-    3: "STRIPE_COUPON_SVG_THREE_TOOLS",
-    4: "STRIPE_COUPON_SVG_FOUR_TOOLS",
-    5: "STRIPE_COUPON_SVG_FIVE_TOOLS",
-}
-
+SVG_PRICE_IDS = dict(zip([*SVG_TOOL_CATALOG, SVG_BUNDLE_ID], [
+    "price_1UWR05GcjYPS3asvfYYyOfNb", "price_1UWR0DGcjYPS3asvaIMuvUjo",
+    "price_1UWR0EGcjYPS3asvvzGDU6eH", "price_1UWR0GGcjYPS3asvGXEkZ9LB",
+    "price_1UWR0IGcjYPS3asvPdIxw729", "price_1UWR0KGcjYPS3asvWLg8MvVb",
+]))
+SVG_TOOL_PRICE_ENV = {pid: "STRIPE_PRICE_" + pid.upper() + "_LIFETIME" for pid in SVG_PRICE_IDS}
+# Kept empty for import compatibility; no recurring coupon participates in checkout.
+SVG_DISCOUNT_COUPON_ENV = {}
 
 class SvgSubscriptionSelectionError(ValueError):
     pass
 
-
 def quote_svg_subscription(selected_product_ids: list[str]) -> dict:
-    unique_product_ids = list(dict.fromkeys(selected_product_ids))
-
-    if not unique_product_ids:
-        raise SvgSubscriptionSelectionError(
-            "Select at least one SVG Micro Eco tool."
-        )
-
-    if len(unique_product_ids) != len(selected_product_ids):
-        raise SvgSubscriptionSelectionError(
-            "Each SVG Micro Eco tool may be selected only once."
-        )
-
-    unknown_product_ids = [
-        product_id
-        for product_id in unique_product_ids
-        if product_id not in SVG_TOOL_CATALOG
+    if not selected_product_ids or len(set(selected_product_ids)) != len(selected_product_ids):
+        raise SvgSubscriptionSelectionError("Select each available SVG purchase only once.")
+    if any(pid not in SVG_PRICE_IDS for pid in selected_product_ids):
+        raise SvgSubscriptionSelectionError("Unknown SVG purchase selection.")
+    if SVG_BUNDLE_ID in selected_product_ids and len(selected_product_ids) != 1:
+        raise SvgSubscriptionSelectionError("The complete bundle cannot be combined with individual tools.")
+    bundle = selected_product_ids == [SVG_BUNDLE_ID] or set(selected_product_ids) == set(SVG_TOOL_CATALOG)
+    entitlements = list(SVG_TOOL_CATALOG) if bundle else list(selected_product_ids)
+    items = [{"product_id": SVG_BUNDLE_ID, "name": "Complete Five-Tool Bundle", "unit_amount_cents": 3499}] if bundle else [
+        {"product_id": pid, "name": SVG_TOOL_CATALOG[pid]["name"], "unit_amount_cents": 999} for pid in selected_product_ids
     ]
-    if unknown_product_ids:
-        raise SvgSubscriptionSelectionError(
-            "Unknown SVG Micro Eco tool selection."
-        )
+    total = sum(item["unit_amount_cents"] for item in items)
+    return {"currency": "usd", "interval": "lifetime", "selected_product_ids": entitlements,
+        "tool_count": len(entitlements), "unit_amount_cents": 3499 if bundle else 999,
+        "subtotal_cents": total, "discount_percent": 0, "discount_cents": 0,
+        "total_cents": total, "line_items": items}
 
-    unavailable_product_ids = [
-        product_id
-        for product_id in unique_product_ids
-        if not SVG_TOOL_CATALOG[product_id]["available"]
-    ]
-    if unavailable_product_ids:
-        raise SvgSubscriptionSelectionError(
-            "One or more selected SVG Micro Eco tools are not available yet."
-        )
-
-    tool_count = len(unique_product_ids)
-    subtotal_cents = SVG_TOOL_MONTHLY_CENTS * tool_count
-    discount_percent = SVG_MULTI_TOOL_DISCOUNT_PERCENT[tool_count]
-    discount_cents = int(
-        (
-            Decimal(subtotal_cents)
-            * Decimal(discount_percent)
-            / Decimal(100)
-        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-    total_cents = subtotal_cents - discount_cents
-
-    return {
-        "currency": "usd",
-        "interval": "month",
-        "selected_product_ids": unique_product_ids,
-        "tool_count": tool_count,
-        "unit_amount_cents": SVG_TOOL_MONTHLY_CENTS,
-        "subtotal_cents": subtotal_cents,
-        "discount_percent": discount_percent,
-        "discount_cents": discount_cents,
-        "total_cents": total_cents,
-        "line_items": [
-            {
-                "product_id": product_id,
-                "name": SVG_TOOL_CATALOG[product_id]["name"],
-                "unit_amount_cents": SVG_TOOL_MONTHLY_CENTS,
-            }
-            for product_id in unique_product_ids
-        ],
-    }
-
-
-def build_svg_checkout_plan(
-    selected_product_ids: list[str],
-    configuration: dict[str, str],
-) -> dict:
-    """Build a Stripe Checkout plan without calling Stripe or changing state."""
+def build_svg_checkout_plan(selected_product_ids: list[str], configuration: dict[str, str]) -> dict:
     quote = quote_svg_subscription(selected_product_ids)
-    missing_configuration = []
     line_items = []
+    for item in quote["line_items"]:
+        pid = item["product_id"]
+        price = configuration.get(SVG_TOOL_PRICE_ENV[pid], SVG_PRICE_IDS[pid]).strip()
+        if not price:
+            raise SvgSubscriptionSelectionError("SVG lifetime checkout is not configured.")
+        line_items.append({"price": price, "quantity": 1})
+    return {"quote": quote, "line_items": line_items, "discounts": [], "metadata": {
+        "package_id": "svg_micro_eco_lifetime", "billing_mode": "payment",
+        "selected_product_ids": ",".join(quote["selected_product_ids"]),
+        "purchase_product_ids": ",".join(item["product_id"] for item in quote["line_items"]),
+    }}
 
-    for product_id in quote["selected_product_ids"]:
-        environment_name = SVG_TOOL_PRICE_ENV[product_id]
-        price_id = configuration.get(environment_name, "").strip()
-
-        if not price_id:
-            missing_configuration.append(environment_name)
-            continue
-
-        line_items.append(
-            {
-                "price": price_id,
-                "quantity": 1,
-            }
-        )
-
-    coupon_id = ""
-    coupon_environment_name = SVG_DISCOUNT_COUPON_ENV.get(
-        quote["tool_count"]
-    )
-    if coupon_environment_name:
-        coupon_id = configuration.get(
-            coupon_environment_name,
-            "",
-        ).strip()
-        if not coupon_id:
-            missing_configuration.append(coupon_environment_name)
-
-    if missing_configuration:
-        raise SvgSubscriptionSelectionError(
-            "SVG subscription checkout is not configured."
-        )
-
-    metadata = {
-        "package_id": "svg_micro_eco_selection",
-        "billing_mode": "subscription",
-        "selected_product_ids": ",".join(
-            quote["selected_product_ids"]
-        ),
-        "tool_count": str(quote["tool_count"]),
-        "discount_percent": str(quote["discount_percent"]),
-    }
-
-    return {
-        "quote": quote,
-        "line_items": line_items,
-        "discounts": (
-            [{"coupon": coupon_id}]
-            if coupon_id
-            else []
-        ),
-        "metadata": metadata,
-    }
-
+def build_svg_checkout_session_parameters(plan, user_id, user_email, success_url, cancel_url, integration_identifier):
+    return {"mode": "payment", "line_items": plan["line_items"], "success_url": success_url,
+        "cancel_url": cancel_url, "client_reference_id": user_id, "customer_email": user_email,
+        "metadata": {**plan["metadata"], "user_id": user_id, "user_email": user_email},
+        "integration_identifier": integration_identifier}
 
 def parse_svg_product_ids(value: str | None) -> list[str]:
     if not value:

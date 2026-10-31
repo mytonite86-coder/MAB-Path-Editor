@@ -15,6 +15,7 @@ class UserResponse(BaseModel):
     username: str
     is_premium: bool
     entitlements: List[str] = Field(default_factory=list)
+    svg_lifetime_entitlements: List[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -84,6 +85,11 @@ class CreateCheckoutSessionResponse(BaseModel):
 
 class SvgSubscriptionQuoteRequest(BaseModel):
     selected_product_ids: List[str]
+
+
+class CreateSvgSubscriptionCheckoutRequest(BaseModel):
+    selected_product_ids: List[str]
+    origin_url: str
 
 
 class SvgSubscriptionLineItem(BaseModel):

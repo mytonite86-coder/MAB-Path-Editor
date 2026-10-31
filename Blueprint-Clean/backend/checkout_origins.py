@@ -7,6 +7,11 @@ DEFAULT_CHECKOUT_ALLOWED_ORIGINS = {
     "https://mytonite86-coder.github.io/MAB-Path-Editor",
     "https://mytonite86-coder.github.io/svg-path-closer",
     "https://mytonite86-coder.github.io/svg-path-closer/pathseal.html",
+    "https://mytonite86-coder.github.io/svg-path-closer/duplicate-geometry.html",
+    "https://mytonite86-coder.github.io/svg-path-closer/index.html",
+    "https://mytonite86-coder.github.io/svg-path-closer/stray-node-cleaner.html",
+    "https://mytonite86-coder.github.io/svg-path-closer/overlapping-shape-repair.html",
+    "https://mytonite86-coder.github.io/svg-path-closer/curve-repair.html",
 }
 
 DEFAULT_CHECKOUT_ALLOWED_SCHEMES = {
