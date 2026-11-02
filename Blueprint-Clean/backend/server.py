@@ -436,6 +436,67 @@ async def shopify_order_paid(request: Request):
     )
 
 
+@api_router.post("/shopify/webhooks/orders-create")
+async def shopify_order_created(request: Request):
+    """Route authenticated created orders to license and/or service email.
+
+    This exists for $0 orders: they are paid at creation but produce no
+    payment event, so orders/paid never fires for them. The body is a
+    deliberate copy of shopify_order_paid: the Block 31 guardrail
+    (tests/test_shared_svg_release.py) freezes the deployed MAB
+    fulfillment functions, so that handler is left byte-identical. The
+    paid gate and the at-least-once delivery claims in the shared body
+    make a second fulfillment of the same order a no-op, so an order
+    seen by both topics is still fulfilled only once. Non-paid
+    creations are ignored by the same paid gate.
+    """
+    order, shop_domain = await verified_shopify_webhook(
+        request, "orders/create"
+    )
+    order_id = require_shopify_order_id(order)
+
+    if str(order.get("financial_status") or "").lower() != "paid":
+        return {"status": "ignored", "reason": "not_paid"}
+    if order.get("cancelled_at") is not None:
+        return {"status": "ignored", "reason": "order_cancelled"}
+    if order.get("refunds"):
+        return {"status": "ignored", "reason": "order_refunded"}
+
+    hold = await get_shopify_order_state(
+        shopify_order_states_collection, shop_domain, order_id
+    )
+    if hold and hold.get("state") in {"cancelled", "refunded"}:
+        return {"status": "ignored", "reason": "commerce_review_required"}
+
+    try:
+        route = build_fulfillment_route(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if route["product_type"] == "ignored":
+        return {"status": "ignored", "reason": "not_supported_product"}
+
+    try:
+        delivery_email = normalize_shopify_customer_email(order)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="A valid purchaser email is required for fulfillment.",
+        ) from exc
+
+    for unit in range(1, route["mab_license_quantity"] + 1):
+        await issue_shopify_activation_code(
+            activation_codes_collection,
+            shop_domain,
+            order_id,
+            unit=unit,
+            delivery_email=delivery_email,
+        )
+
+    return await deliver_shopify_order(
+        shop_domain, order_id, delivery_email, route
+    )
+
+
 async def record_shopify_commerce_hold(
     shop_domain: str,
     order_id: str,
