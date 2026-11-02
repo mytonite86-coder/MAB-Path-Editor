@@ -516,3 +516,36 @@ def test_service_only_and_mixed_section_isolation(configured_server, monkeypatch
         assert {a["product_type"] for a in audits} == {"service", "mixed"}
 
     run(scenario())
+
+
+def test_orders_create_fulfills_paid_order_and_ignores_unpaid(
+        configured_server, monkeypatch):
+    deliveries = []
+
+    def fake_send(email, order_id, codes, services, timezone):
+        deliveries.append((email, order_id, codes, services, timezone))
+        return "gmail-test-message"
+
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email", fake_send)
+
+    async def scenario():
+        order = make_order()
+        created = await server.shopify_order_created(
+            make_request(order, topic="orders/create"))
+        assert created == {
+            "status": "delivered",
+            "delivery_complete": True,
+            "mab_license_quantity": 1,
+            "product_type": "mab_s1",
+        }
+        # A later orders/paid for the same order must not send twice.
+        paid = await server.shopify_order_paid(make_request(order))
+        assert paid == created
+        assert len(deliveries) == 1
+        unpaid = await server.shopify_order_created(
+            make_request(
+                make_order(id=99999, financial_status="pending"),
+                topic="orders/create"))
+        assert unpaid == {"status": "ignored", "reason": "not_paid"}
+
+    run(scenario())
