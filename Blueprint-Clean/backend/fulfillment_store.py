@@ -31,6 +31,7 @@ async def prepare_fulfillment(collection, shop_domain, order_id, email, route):
         "product_type": route["product_type"],
         "mab_license_quantity": route["mab_license_quantity"],
         "services": route["services"],
+        "svg_licenses": route.get("svg_licenses", []),
         "timezone": route["timezone"],
         "send_status": "pending",
         "send_attempts": 0,
@@ -57,6 +58,11 @@ async def prepare_fulfillment(collection, shop_domain, order_id, email, route):
             raise RuntimeError(
                 "Shopify order fulfillment changed. Manual review required."
             )
+    # Older M.A.B./service outbox rows predate the SVG field. Preserve their
+    # retry compatibility; require exact immutable SVG selection for new orders.
+    if (route.get("svg_licenses") and
+            existing.get("svg_licenses") != route["svg_licenses"]):
+        raise RuntimeError("Shopify SVG order selection changed. Manual review required.")
     return existing
 
 
