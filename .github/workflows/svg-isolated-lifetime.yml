@@ -18,6 +18,8 @@ jobs:
       DB_NAME: svg_isolated_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -29,5 +31,6 @@ jobs:
             python-jose stripe requests tzdata
       - name: Check Python syntax
         run: python -m compileall -q svg_shopify.py fulfillment_router.py fulfillment_store.py shopify_delivery.py server.py tests/test_svg_shopify_lifetime.py
-      - name: Test verified Shopify orders, refund hold, replay, and SVG lifetime redemption
-        run: python -m pytest -q tests/test_svg_shopify_lifetime.py
+      - name: Test SVG Shopify plus existing MAB activation and shared Stripe release regression
+        run: |
+          python -m pytest -q tests/test_svg_shopify_lifetime.py tests/test_activation_codes.py tests/test_svg_lifetime.py tests/test_shared_svg_release.py
