@@ -4,6 +4,7 @@ Never trust the product title alone to determine an entitlement. M.A.B. uses
 an exact product+variant pair, and services use catalog product IDs/SKUs.
 """
 from activation_codes import SHOPIFY_MAB_PRODUCT_ID, SHOPIFY_MAB_VARIANT_ID
+from svg_shopify import svg_order_licenses
 
 TIMEZONE = "America/Denver"
 
@@ -45,6 +46,7 @@ def build_fulfillment_route(order: dict) -> dict:
 
     license_count = 0
     services = []
+    svg_licenses = svg_order_licenses(order)
     for item in items:
         if not isinstance(item, dict):
             raise ValueError("Invalid Shopify line item.")
@@ -88,14 +90,16 @@ def build_fulfillment_route(order: dict) -> dict:
         })
 
     category = (
-        "mixed" if license_count and services
+        "mixed" if sum(bool(part) for part in (license_count, services, svg_licenses)) > 1
         else "mab_s1" if license_count
         else "service" if services
+        else "svg_lifetime" if svg_licenses
         else "ignored"
     )
     return {
         "product_type": category,
         "mab_license_quantity": license_count,
         "services": services,
+        "svg_licenses": svg_licenses,
         "timezone": TIMEZONE,
     }
