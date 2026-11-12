@@ -90,9 +90,11 @@ def compose_fulfillment_message(
     activation_codes: list,
     services: list,
     timezone: str = TIMEZONE,
+    svg_codes: list | None = None,
 ) -> EmailMessage:
     """Compose strictly relevant sections; never leak a code into service mail."""
-    if not activation_codes and not services:
+    svg_codes = svg_codes or []
+    if not activation_codes and not services and not svg_codes:
         raise ValueError("No fulfillment items to email.")
     sender = _valid_email(sender)
     recipient = _valid_email(recipient)
@@ -100,10 +102,12 @@ def compose_fulfillment_message(
     message = EmailMessage()
     message["From"] = f"S&K Productions <{sender}>"
     message["To"] = recipient
-    if activation_codes and services:
+    if sum(bool(part) for part in (activation_codes, services, svg_codes)) > 1:
         message["Subject"] = f"S&K Productions order {order_id}: access and scheduling"
     elif activation_codes:
         message["Subject"] = "Your M.A.B. S1 activation code"
+    elif svg_codes:
+        message["Subject"] = "Your SVG Micro Eco lifetime activation code"
     else:
         message["Subject"] = f"S&K Productions order {order_id}: schedule your service"
 
@@ -128,6 +132,28 @@ def compose_fulfillment_message(
             "3. Enter the code and select ACTIVATE.",
             "Each code is single-use and unlocks the mab_s1 entitlement once.",
             "M.A.B. S2 is not included.",
+        ])
+        paragraphs.append("\n".join(lines))
+
+    if svg_codes:
+        lines = [
+            "SVG MICRO ECO LIFETIME ACTIVATION",
+            "One-time purchase. No subscription.",
+            "Your single-use SVG activation code(s):",
+        ]
+        for entry in svg_codes:
+            lines.append(
+                f"- {entry['product_name']} (unit {entry['unit']}): {entry['activation_code']}"
+            )
+        lines.extend([
+            "",
+            "1. Open the SVG Micro Eco hub: https://mytonite86-coder.github.io/svg-path-closer/",
+            "2. Sign in to your account or create one.",
+            "3. Enter each code in the SVG Lifetime Activation section.",
+            "4. Your purchased SVG tool(s) will unlock for that account.",
+            "The five-tool bundle unlocks only the five SVG Micro Eco tools.",
+            "M.A.B. and unrelated lifetime products are not included.",
+            "Each code can be redeemed by one account only.",
         ])
         paragraphs.append("\n".join(lines))
 
@@ -169,11 +195,12 @@ def send_shopify_fulfillment_email(
     activation_codes: list,
     services: list,
     timezone: str = TIMEZONE,
+    svg_codes: list | None = None,
 ) -> str:
     """Send with Gmail over HTTPS, return provider message ID, never log codes."""
     sender, client_id, client_secret, refresh_token = _gmail_credentials()
     message = compose_fulfillment_message(
-        sender, recipient, order_id, activation_codes, services, timezone
+        sender, recipient, order_id, activation_codes, services, timezone, svg_codes=svg_codes
     )
     token = _gmail_access_token(client_id, client_secret, refresh_token)
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
