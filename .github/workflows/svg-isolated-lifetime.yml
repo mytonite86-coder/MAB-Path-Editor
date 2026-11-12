@@ -1,0 +1,33 @@
+name: SVG isolated lifetime acceptance
+on:
+  push:
+    branches:
+      - work/svg-shopify-lifetime-fulfillment
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  svg-lifetime:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Blueprint-Clean/backend
+    env:
+      JWT_SECRET: isolated-test-jwt-key
+      MONGO_URL: mongodb://127.0.0.1:27017
+      DB_NAME: svg_isolated_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install fastapi==0.110.1 pydantic>=2.6.4 "pymongo==4.5.0" "motor==3.3.1" \
+            cryptography pytest mongomock-motor python-dotenv email-validator passlib bcrypt \
+            python-jose stripe requests tzdata
+      - name: Check Python syntax
+        run: python -m compileall -q svg_shopify.py fulfillment_router.py fulfillment_store.py shopify_delivery.py server.py tests/test_svg_shopify_lifetime.py
+      - name: Test verified Shopify orders, refund hold, replay, and SVG lifetime redemption
+        run: python -m pytest -q tests/test_svg_shopify_lifetime.py
