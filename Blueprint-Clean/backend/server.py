@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -2143,6 +2143,14 @@ async def relay_pathseal_event(event: dict):
     await forward_signaldrift_event(payload)
     return {"accepted": True}
 
+
+
+@app.get("/svg-test", include_in_schema=False)
+async def svg_test_checkout_page():
+    # Only the disposable staging deployment exposes the test payment bench.
+    if os.environ.get("SVG_ISOLATED_STAGING") != "1":
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(ROOT_DIR / "svg_test_checkout.html", media_type="text/html")
 
 
 @api_router.get("/health")
