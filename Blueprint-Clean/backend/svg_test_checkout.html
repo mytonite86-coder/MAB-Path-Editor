@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVG Micro Eco · Stripe TEST Checkout</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{max-width:780px;margin:28px auto;padding:0 18px;background:#12141b;color:#eff2ff}
+h1{font-size:1.8rem}h2{font-size:1.12rem}p{line-height:1.5}fieldset{border:1px solid #41475b;border-radius:10px;margin:18px 0;padding:17px}label{display:block;margin:12px 0 5px}
+input,button,select{background:#242937;border:1px solid #62697f;border-radius:6px;color:white;padding:12px;font-size:1rem}
+input{width:95%;max-width:450px;box-sizing:border-box}button{cursor:pointer;background:#335ec4;margin:8px 8px 8px 0}button:disabled{opacity:.5}
+small,.dim{color:#a9b3cb}#status{white-space:pre-wrap;background:#202637;border-left:4px solid #5685fa;padding:14px;min-height:3rem}
+mark{padding:3px 7px;border-radius:5px;background:#ba7922;color:#101317}a{color:#91b7ff}
+</style></head><body>
+<h1>SVG Micro Eco · Payment Test Bench</h1>
+<p><mark>TEST MODE ONLY</mark> This is an isolated, disposable test service. Use a throwaway email and password; do not use real payment details or production logins.</p>
+<fieldset><legend>1 · Create or sign in to a test account</legend>
+<label for="email">Throwaway email</label><input id="email" type="email" autocomplete="off" placeholder="svg-test@example.invalid">
+<label for="username">Test username</label><input id="username" autocomplete="off" placeholder="svgtester">
+<label for="password">Test password</label><input id="password" type="password" autocomplete="off" placeholder="At least 8 characters">
+<div><button id="register">Create test account</button><button id="login">Sign in</button><button id="account">Check access</button></div>
+</fieldset>
+<fieldset><legend>2 · Run an actual Stripe TEST checkout</legend>
+<p>No funds move. Stripe's test-card numbers work on the hosted checkout page.</p>
+<label for="selection">Product</label>
+<select id="selection">
+<option value="pathseal">PathSeal · $9.99</option>
+<option value="duplicate_geometry">Duplicate Line Remover · $9.99</option>
+<option value="stray_node_cleaner">Stray Node Cleaner · $9.99</option>
+<option value="overlapping_shape_repair">Overlapping Shape Repair · $9.99</option>
+<option value="curve_repair">Curve Repair · $9.99</option>
+<option value="svg_complete_bundle">Complete Five-Tool Bundle · $34.99</option>
+</select>
+<div><button id="checkout">Open Stripe test checkout</button></div>
+<small>Successful card: <code>4242 4242 4242 4242</code>. Decline test: <code>4000 0000 0000 0002</code>. Use a future expiry and any CVC. Stripe will redirect back here.</small>
+</fieldset>
+<fieldset><legend>3 · Confirm fulfillment</legend>
+<button id="verify">Verify returned payment and account access</button>
+<p id="status" aria-live="polite">Create a throwaway test account to begin.</p>
+</fieldset>
+<script type="module">
+const $=id=>document.getElementById(id), K="svg-staging-only-token", BASE="/api";
+let token=sessionStorage.getItem(K)||"";
+const show=(value)=>{$("status").textContent=typeof value==="string"?value:JSON.stringify(value,null,2)};
+async function api(path,method="GET",data){
+ const headers={Accept:"application/json"};
+ if(token)headers.Authorization="Bearer "+token;
+ if(data!==undefined)headers["Content-Type"]="application/json";
+ const r=await fetch(BASE+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)});
+ const value=await r.json().catch(()=>({detail:"Non-JSON response"}));
+ if(!r.ok)throw new Error(typeof value.detail==="string"?value.detail:JSON.stringify(value));
+ return value;
+}
+async function auth(path){
+ const payload={email:$("email").value.trim(),password:$("password").value};
+ if(path==="register")payload.username=$("username").value.trim();
+ const r=await api("/auth/"+path,"POST",payload);
+ token=r.access_token;sessionStorage.setItem(K,token);
+ show({signedInAs:r.user?.email,entitlements:r.user?.entitlements||[]});
+}
+$("register").onclick=()=>auth("register").catch(e=>show("Registration failed: "+e.message));
+$("login").onclick=()=>auth("login").catch(e=>show("Login failed: "+e.message));
+$("account").onclick=async()=>{try{if(!token)throw Error("Sign in first"); const d=await api("/auth/me");show({email:d.email,entitlements:d.entitlements,svg_lifetime_entitlements:d.svg_lifetime_entitlements});}catch(e){show(e.message)}};
+$("checkout").onclick=async()=>{try{
+ if(!token)throw Error("Create/sign in to a test account first");
+ show("Creating Stripe test checkout...");
+ const d=await api("/payments/svg-subscription/checkout/session","POST",{
+ selected_product_ids:[$("selection").value], origin_url:location.origin+location.pathname});
+ if(!d.url?.startsWith("https://checkout.stripe.com/"))throw Error("Stripe checkout URL unavailable");
+ location.assign(d.url);
+}catch(e){show("Checkout blocked: "+e.message)}};
+async function verify(){try{
+ if(!token)throw Error("Sign in to the same staging test account first");
+ const id=new URLSearchParams(location.search).get("session_id");
+ if(id){
+ const checkout=await api("/payments/checkout/status/"+encodeURIComponent(id));
+ show({checkout_status:checkout.status,payment_status:checkout.payment_status,entitlements:checkout.entitlements});
+ }
+ const user=await api("/auth/me");
+ show({paid_session_id:id,account_email:user.email,entitlements:user.entitlements,svg_lifetime_entitlements:user.svg_lifetime_entitlements});
+}catch(e){show("Payment verification: "+e.message)}}
+$("verify").onclick=verify;
+if(new URLSearchParams(location.search).has("checkout"))verify();
+</script></body></html>
