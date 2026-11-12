@@ -1800,6 +1800,17 @@ async def create_svg_subscription_checkout_session(
             detail=str(exc),
         ) from exc
 
+    if os.environ.get("SVG_ISOLATED_STAGING") == "1":
+        # Do not let older Render env vars silently select live or recurring
+        # monthly prices. These price IDs were individually verified to be
+        # one-time prices on the same Stripe test account.
+        for product, line_item in zip(plan["quote"]["line_items"], plan["line_items"]):
+            if line_item["price"] != SVG_PRICE_IDS[product["product_id"]]:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Staging test price is outdated; checkout disabled",
+                )
+
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=500, detail="Stripe API key is not configured")
     # Refuse real-money credentials on the isolated SVG checkout bench.
