@@ -141,3 +141,50 @@ def test_quantity_two_creates_two_distinct_codes(sandbox):
         assert len(set(codes))==2
         assert await db.activation_codes.count_documents({})==2
     asyncio.run(check())
+
+
+def test_mixed_mab_and_svg_order_delivers_distinct_licenses(sandbox):
+    """A mixed cart must not sacrifice either existing M.A.B. or new SVG access."""
+    db, emails = sandbox
+    async def check():
+        data = order("15476021592343", "68167232127255")
+        data["line_items"].append({
+            "product_id": 15428412571927, "variant_id": 67773605544215,
+            "quantity": 1,
+        })
+        result = await server.shopify_order_paid(req(data))
+        assert result["product_type"] == "mixed"
+        assert len(emails) == 1
+        assert len(emails[0]["mab"]) == 1
+        assert len(emails[0]["svg"]) == 1
+        assert await db.activation_codes.count_documents({}) == 2
+        assert emails[0]["mab"][0]["activation_code"].startswith("MAB1-")
+        assert emails[0]["svg"][0]["activation_code"].startswith("SVG1-")
+        again = await server.shopify_order_paid(req(data))
+        assert again["delivery_complete"] is True and len(emails) == 1
+    asyncio.run(check())
+
+
+def test_failed_svg_email_retry_reuses_the_original_encrypted_code(sandbox, monkeypatch):
+    db, emails = sandbox
+    attempts = []
+    def flaky(recipient, order_id, mab_codes, services, timezone, svg_codes=None):
+        codes = [entry["activation_code"] for entry in (svg_codes or [])]
+        attempts.append(codes)
+        if len(attempts) == 1:
+            raise RuntimeError("fixture: email provider unavailable")
+        return "msg_recovered"
+    monkeypatch.setattr(server, "send_shopify_fulfillment_email", flaky)
+    async def check():
+        data = order("15476020576535", "68167230914839")
+        with pytest.raises(Exception):
+            await server.shopify_order_paid(req(data))
+        assert await db.activation_codes.count_documents({}) == 1
+        record = await db.activation_codes.find_one({})
+        assert record["delivery_status"] == "failed"
+        recovered = await server.shopify_order_paid(req(data))
+        assert recovered["delivery_complete"] is True
+        assert len(attempts) == 2 and attempts[0] == attempts[1]
+        assert await db.activation_codes.count_documents({}) == 1
+        assert (await db.activation_codes.find_one({}))["delivery_status"] == "delivered"
+    asyncio.run(check())
