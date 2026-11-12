@@ -1802,6 +1802,15 @@ async def create_svg_subscription_checkout_session(
 
     if not STRIPE_API_KEY:
         raise HTTPException(status_code=500, detail="Stripe API key is not configured")
+    # Refuse real-money credentials on the isolated SVG checkout bench.
+    # Never allow a staging checkout to run against a live Stripe account.
+    if os.environ.get("SVG_ISOLATED_STAGING") == "1":
+        if not STRIPE_API_KEY.startswith("sk_test_"):
+            raise HTTPException(
+                status_code=503,
+                detail="Staging checkout requires a Stripe sk_test_ secret key",
+            )
+        parameters.pop("integration_identifier", None)
     stripe_client = stripe.StripeClient(STRIPE_API_KEY)
     try:
         session = stripe_client.v1.checkout.sessions.create(parameters)
