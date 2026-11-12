@@ -1,3 +1,5 @@
+import os
+
 from subscription_policy import pathseal_access_action
 
 SVG_BUNDLE_ID = "svg_complete_bundle"
@@ -13,6 +15,19 @@ SVG_PRICE_IDS = dict(zip([*SVG_TOOL_CATALOG, SVG_BUNDLE_ID], [
     "price_1UWR0EGcjYPS3asvvzGDU6eH", "price_1UWR0GGcjYPS3asvGXEkZ9LB",
     "price_1UWR0IGcjYPS3asvPdIxw729", "price_1UWR0KGcjYPS3asvWLg8MvVb",
 ]))
+# Sandbox-only, verified Stripe TEST prices. The staging branch must never
+# default to the older Stripe live or recurring prices.
+SVG_STAGING_ONE_TIME_PRICE_IDS = {
+    "pathseal": "price_1Ub4BxGcjYPS3asvXkJumXAU",
+    "duplicate_geometry": "price_1Ub4C2GcjYPS3asvwEZTatnm",
+    "stray_node_cleaner": "price_1Ub3ptGcjYPS3asvAccQzO0I",
+    "overlapping_shape_repair": "price_1Ub3pxGcjYPS3asvSy2VP5rA",
+    "curve_repair": "price_1Ub3q2GcjYPS3asvfAuCR2g1",
+    "svg_complete_bundle": "price_1Ub3q3GcjYPS3asvVa0ufoCj",
+}
+if os.environ.get("SVG_ISOLATED_STAGING") == "1":
+    SVG_PRICE_IDS = SVG_STAGING_ONE_TIME_PRICE_IDS.copy()
+
 SVG_TOOL_PRICE_ENV = {pid: "STRIPE_PRICE_" + pid.upper() + "_LIFETIME" for pid in SVG_PRICE_IDS}
 # Kept empty for import compatibility; no recurring coupon participates in checkout.
 SVG_DISCOUNT_COUPON_ENV = {}
