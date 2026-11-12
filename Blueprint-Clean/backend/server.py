@@ -100,9 +100,16 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # MongoDB connection
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+# Staging-only ephemeral database: cannot touch production MongoDB. Data is
+# intentionally erased whenever the isolated staging service restarts.
+if os.environ.get("SVG_ISOLATED_STAGING") == "1":
+    from mongomock_motor import AsyncMongoMockClient
+    client = AsyncMongoMockClient()
+    db = client[os.environ.get("DB_NAME", "svg_isolated_staging")]
+else:
+    mongo_url = os.environ["MONGO_URL"]
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[os.environ["DB_NAME"]]
 
 # Collections
 users_collection = db.users
