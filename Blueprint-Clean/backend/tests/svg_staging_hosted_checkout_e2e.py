@@ -49,7 +49,11 @@ def pay(page, url):
     u = urlparse(url)
     assert u.scheme == "https" and u.hostname == "checkout.stripe.com", "Not hosted Stripe checkout"
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(2300)
+    page.wait_for_timeout(4500)
+    print("HOSTED CHECKOUT PAGE:", page.url, flush=True)
+    print("HOSTED CHECKOUT TEXT:", page.locator("body").inner_text()[:2400], flush=True)
+    print("HOSTED CHECKOUT BUTTONS:", page.locator("button").all_text_contents()[:40], flush=True)
+    print("HOSTED CHECKOUT FRAMES:", [(f.url or "")[:130] for f in page.frames], flush=True)
     fill(page, ['input[name="cardNumber"]','input[autocomplete="cc-number"]','input[placeholder*="1234 1234"]'], "4242424242424242", True)
     fill(page, ['input[name="cardExpiry"]','input[autocomplete="cc-exp"]','input[placeholder*="MM"]'], "1235", True)
     fill(page, ['input[name="cardCvc"]','input[autocomplete="cc-csc"]','input[placeholder*="CVC" i]'], "123", True)
