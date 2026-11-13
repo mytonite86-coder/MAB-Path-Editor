@@ -188,3 +188,25 @@ def test_failed_svg_email_retry_reuses_the_original_encrypted_code(sandbox, monk
         assert await db.activation_codes.count_documents({}) == 1
         assert (await db.activation_codes.find_one({}))["delivery_status"] == "delivered"
     asyncio.run(check())
+
+def test_paid_at_creation_svg_order_gets_code_and_does_not_duplicate(sandbox):
+    """Preserve the newer live M.A.B. orders/create route for zero-dollar gift orders."""
+    db, emails = sandbox
+    async def check():
+        await db.activation_codes.create_index("code_hash", unique=True)
+        await db.activation_codes.create_index("shopify_license_key", unique=True)
+        product, variant = "15476021592343", "68167232127255"
+        data = order(product, variant)
+        data["total_price"] = "0.00"
+        created = await server.shopify_order_created(req(data, topic="orders/create"))
+        assert created["delivery_complete"] is True
+        assert created["product_type"] == "svg_lifetime"
+        assert len(emails) == 1
+        assert len(emails[0]["svg"]) == 1
+        code = emails[0]["svg"][0]["activation_code"]
+        assert code.startswith("SVG1-")
+        paid_again = await server.shopify_order_paid(req(data))
+        assert paid_again["delivery_complete"] is True
+        assert len(emails) == 1, "Duplicate orders/paid must not redeliver"
+        assert await db.activation_codes.count_documents({}) == 1
+    asyncio.run(check())
