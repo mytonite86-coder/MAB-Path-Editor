@@ -68,6 +68,11 @@ from shopify_delivery import (
     send_shopify_fulfillment_email,
 )
 from fulfillment_router import build_fulfillment_route
+from svg_shopify import (
+    SVG_SHOPIFY_PRODUCTS,
+    svg_license_key, issue_svg_license, validate_svg_code,
+    redeem_svg_code, get_svg_redemption_for_user,
+)
 from fulfillment_store import (
     ensure_fulfillment_indexes,
     prepare_fulfillment,
@@ -79,6 +84,7 @@ from fulfillment_store import (
 from checkout_origins import validate_checkout_origin
 from readiness import build_readiness_report
 from svg_subscription import (
+    SVG_TOOL_CATALOG,
     SVG_PRICE_IDS,
     SVG_TOOL_PRICE_ENV,
     build_svg_checkout_plan,
@@ -290,6 +296,7 @@ async def deliver_shopify_order(
 
     claimed_keys = []
     activation_codes = []
+    svg_codes = []
     sections = []
     try:
         # Check after claiming the order, before any external delivery.
@@ -325,22 +332,62 @@ async def deliver_shopify_order(
                 ),
             })
 
+        # SVG licenses are issued before the outbox is claimed, like M.A.B.
+        # Claim each code before emailing; delivered codes are not resent.
+        for item in route.get("svg_licenses", []):
+            for unit in range(1, item["quantity"] + 1):
+                key = svg_license_key(
+                    shop_domain, order_id, item["product_id"], item["variant_id"], unit
+                )
+                record = await claim_shopify_activation_delivery(
+                    activation_codes_collection, key
+                )
+                if record is None:
+                    prior = await activation_codes_collection.find_one({
+                        "shopify_license_key": key,
+                    })
+                    if prior and prior.get("delivery_status") == "delivered":
+                        continue
+                    raise HTTPException(
+                        status_code=503,
+                        detail="SVG activation delivery is already in progress.",
+                    )
+                claimed_keys.append(key)
+                svg_codes.append({
+                    "unit": unit, "product_name": item["name"],
+                    "activation_code": decrypt_delivery_code(record["encrypted_delivery_code"]),
+                })
+
         if activation_codes:
             sections.append("mab_s1_activation")
+        if svg_codes:
+            sections.append("svg_lifetime_activation")
         if route["services"]:
             sections.append("service_scheduling")
 
         # No new email for a legacy order whose codes were already sent.
         provider_id = "previous_activation_delivery"
         if sections:
-            provider_id = await asyncio.to_thread(
-                send_shopify_fulfillment_email,
-                email,
-                order_id,
-                activation_codes,
-                route["services"],
-                route["timezone"],
-            )
+            if svg_codes:
+                provider_id = await asyncio.to_thread(
+                    send_shopify_fulfillment_email,
+                    email,
+                    order_id,
+                    activation_codes,
+                    route["services"],
+                    route["timezone"],
+                    svg_codes=svg_codes,
+                )
+            else:
+                # Preserve legacy M.A.B./service sender signature.
+                provider_id = await asyncio.to_thread(
+                    send_shopify_fulfillment_email,
+                    email,
+                    order_id,
+                    activation_codes,
+                    route["services"],
+                    route["timezone"],
+                )
 
         for key in claimed_keys:
             if not await mark_shopify_activation_delivered(
@@ -431,6 +478,13 @@ async def shopify_order_paid(request: Request):
             delivery_email=delivery_email,
         )
 
+    for item in route.get("svg_licenses", []):
+        for unit in range(1, item["quantity"] + 1):
+            await issue_svg_license(
+                activation_codes_collection, shop_domain, order_id,
+                item, unit, delivery_email,
+            )
+
     return await deliver_shopify_order(
         shop_domain, order_id, delivery_email, route
     )
@@ -492,6 +546,17 @@ async def shopify_order_created(request: Request):
             delivery_email=delivery_email,
         )
 
+    for svg_item in route.get("svg_licenses", []):
+        for unit in range(1, svg_item["quantity"] + 1):
+            await issue_svg_license(
+                activation_codes_collection,
+                shop_domain,
+                order_id,
+                svg_item,
+                unit,
+                delivery_email,
+            )
+
     return await deliver_shopify_order(
         shop_domain, order_id, delivery_email, route
     )
@@ -552,8 +617,14 @@ async def shopify_refund_created(request: Request):
         for entry in refund_items
         if isinstance(entry, dict)
     )
-    if refund_items and not mab_refund:
-        return {"status": "ignored", "reason": "not_mab_refund"}
+    svg_refund = any(
+        (str((entry.get("line_item") or {}).get("product_id")),
+         str((entry.get("line_item") or {}).get("variant_id")))
+        in SVG_SHOPIFY_PRODUCTS
+        for entry in refund_items if isinstance(entry, dict)
+    )
+    if refund_items and not mab_refund and not svg_refund:
+        return {"status": "ignored", "reason": "not_supported_refund"}
     affected = await record_shopify_commerce_hold(
         shop_domain,
         order_id,
@@ -1663,6 +1734,60 @@ async def activate_premium(
         "product_id": "mab_s1",
         "message": "M.A.B. S1 license activated successfully.",
     }
+
+@api_router.post("/svg/activate")
+async def activate_svg_lifetime(
+    request: RedeemActivationRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Redeem a Shopify-issued SVG lifetime code for exactly its listed tools."""
+    code = request.code.strip().upper()
+    if not validate_svg_code(code):
+        raise HTTPException(status_code=400, detail="Invalid SVG activation code.")
+    user_id = current_user["user_id"]
+    record = await get_svg_redemption_for_user(
+        activation_codes_collection, code, user_id
+    )
+    if record is None:
+        record = await redeem_svg_code(
+            activation_codes_collection, code, user_id
+        )
+    if record is None:
+        raise HTTPException(
+            status_code=400, detail="SVG code is invalid, used, or unavailable."
+        )
+    grants = record.get("entitlement_ids") or []
+    if (not grants or len(set(grants)) != len(grants)
+        or any(tool not in SVG_TOOL_CATALOG for tool in grants)):
+        raise HTTPException(
+            status_code=503, detail="SVG license configuration requires review."
+        )
+    if (record.get("commerce_review_required") and
+            record.get("entitlement_status") != "complete"):
+        raise HTTPException(
+            status_code=409, detail="Order requires commerce review."
+        )
+    result = await users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$addToSet": {
+            "entitlements": {"$each": grants},
+            "svg_lifetime_entitlements": {"$each": grants},
+        }},
+    )
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if not await mark_activation_complete(
+        activation_codes_collection, hash_activation_code(code), user_id
+    ):
+        raise HTTPException(
+            status_code=503, detail="Activation confirmation pending; retry."
+        )
+    return {
+        "success": True,
+        "entitlements": grants,
+        "message": "SVG Micro Eco lifetime access activated.",
+    }
+
 
 @api_router.get("/payments/packages", response_model=List[PaymentPackageResponse])
 async def get_payment_packages():
