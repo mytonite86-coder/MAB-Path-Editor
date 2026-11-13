@@ -1,0 +1,32 @@
+name: SVG staging Stripe hosted payment acceptance
+on:
+  push:
+    branches:
+      - work/svg-test-checkout-staging
+    paths:
+      - Blueprint-Clean/backend/tests/svg_staging_hosted_checkout_e2e.py
+      - .github/workflows/svg-staging-stripe-hosted-test.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: svg-staging-hosted-checkout
+  cancel-in-progress: false
+jobs:
+  checkout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated browser test tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests playwright
+          python -m playwright install --with-deps chromium
+      - name: Run actual Stripe TEST card single-tool and bundle checkout
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python Blueprint-Clean/backend/tests/svg_staging_hosted_checkout_e2e.py
