@@ -6,6 +6,12 @@
 h1{font-size:1.8rem}h2{font-size:1.12rem}p{line-height:1.5}fieldset{border:1px solid #41475b;border-radius:10px;margin:18px 0;padding:17px}label{display:block;margin:12px 0 5px}
 input,button,select{background:#242937;border:1px solid #62697f;border-radius:6px;color:white;padding:12px;font-size:1rem}
 input{width:95%;max-width:450px;box-sizing:border-box}button{cursor:pointer;background:#335ec4;margin:8px 8px 8px 0}button:disabled{opacity:.5}
+.test-choice{display:block;width:100%;text-align:left;background:#214b9d;border:2px solid #89aaff;border-radius:12px;padding:18px;margin:12px 0;font-weight:750;font-size:1.08rem;line-height:1.4;min-height:68px}
+.test-choice.bundle{background:#186053;border-color:#63e5b5}
+.test-choice small{display:block;color:#e4edff;font-size:.85rem;font-weight:400}
+#other-tools{width:100%;max-width:100%;min-height:50px;margin:10px 0;box-sizing:border-box}
+@media(max-width:520px){body{margin:12px auto;padding:0 12px}fieldset{margin:12px 0;padding:12px}.test-choice{margin:10px 0;padding:15px}}
+
 small,.dim{color:#a9b3cb}#status{white-space:pre-wrap;background:#202637;border-left:4px solid #5685fa;padding:14px;min-height:3rem}
 mark{padding:3px 7px;border-radius:5px;background:#ba7922;color:#101317}a{color:#91b7ff}
 </style></head><body>
@@ -19,16 +25,20 @@ mark{padding:3px 7px;border-radius:5px;background:#ba7922;color:#101317}a{color:
 </fieldset>
 <fieldset><legend>2 · Run an actual Stripe TEST checkout</legend>
 <p>No funds move. Stripe's test-card numbers work on the hosted checkout page.</p>
-<label for="selection">Product</label>
-<select id="selection">
-<option value="pathseal">PathSeal · $9.99</option>
-<option value="duplicate_geometry">Duplicate Line Remover · $9.99</option>
-<option value="stray_node_cleaner">Stray Node Cleaner · $9.99</option>
-<option value="overlapping_shape_repair">Overlapping Shape Repair · $9.99</option>
-<option value="curve_repair">Curve Repair · $9.99</option>
-<option value="svg_complete_bundle">Complete Five-Tool Bundle · $34.99</option>
+<p><strong>Choose the purchase to test:</strong></p>
+<button class="test-choice" id="test-pathseal" type="button">1. TEST PATHSEAL · $9.99 ONE-TIME<small>Checks access to PathSeal only</small></button>
+<button class="test-choice bundle" id="test-bundle" type="button">2. TEST COMPLETE SVG BUNDLE · $34.99 ONE-TIME<small>Checks permanent access to all FIVE SVG tools</small></button>
+<details><summary>Test a different individual SVG tool</summary>
+<label for="other-tools">Choose individual tool ($9.99 one-time)</label>
+<select id="other-tools">
+<option value="duplicate_geometry">Duplicate Line Remover</option>
+<option value="stray_node_cleaner">Stray Node Cleaner</option>
+<option value="overlapping_shape_repair">Overlapping Shape Repair</option>
+<option value="curve_repair">Curve Repair</option>
 </select>
-<div><button id="checkout">Open Stripe test checkout</button></div>
+<button id="test-other" type="button">Test selected $9.99 tool</button>
+</details>
+<p class="dim">Choose ONE button above. Stripe opens its TEST checkout for that purchase only.</p>
 <small>Successful card: <code>4242 4242 4242 4242</code>. Decline test: <code>4000 0000 0000 0002</code>. Use a future expiry and any CVC. Stripe will redirect back here.</small>
 </fieldset>
 <fieldset><legend>3 · Confirm fulfillment</legend>
@@ -58,14 +68,18 @@ async function auth(path){
 $("register").onclick=()=>auth("register").catch(e=>show("Registration failed: "+e.message));
 $("login").onclick=()=>auth("login").catch(e=>show("Login failed: "+e.message));
 $("account").onclick=async()=>{try{if(!token)throw Error("Sign in first"); const d=await api("/auth/me");show({email:d.email,entitlements:d.entitlements,svg_lifetime_entitlements:d.svg_lifetime_entitlements});}catch(e){show(e.message)}};
-$("checkout").onclick=async()=>{try{
+async function startCheckout(productId, label){try{
  if(!token)throw Error("Create/sign in to a test account first");
- show("Creating Stripe test checkout...");
+ show("Opening ONE-TIME TEST checkout for "+label+"...");
  const d=await api("/payments/svg-subscription/checkout/session","POST",{
- selected_product_ids:[$("selection").value], origin_url:location.origin+location.pathname});
+ selected_product_ids:[productId],origin_url:location.origin+location.pathname});
+ if(!d.session_id?.startsWith("cs_test_"))throw Error("Not a Stripe TEST checkout. No payment started.");
  if(!d.url?.startsWith("https://checkout.stripe.com/"))throw Error("Stripe checkout URL unavailable");
  location.assign(d.url);
-}catch(e){show("Checkout blocked: "+e.message)}};
+}catch(e){show("Checkout blocked: "+e.message)}}
+$("test-pathseal").onclick=()=>startCheckout("pathseal","PathSeal · $9.99");
+$("test-bundle").onclick=()=>startCheckout("svg_complete_bundle","ALL FIVE SVG tools · $34.99");
+$("test-other").onclick=()=>startCheckout($("other-tools").value,"selected individual tool · $9.99");
 async function verify(){try{
  if(!token)throw Error("Sign in to the same staging test account first");
  const id=new URLSearchParams(location.search).get("session_id");
