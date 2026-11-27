@@ -202,6 +202,25 @@ def send_shopify_fulfillment_email(
     message = compose_fulfillment_message(
         sender, recipient, order_id, activation_codes, services, timezone, svg_codes=svg_codes
     )
+    return send_gmail_message(message, client_id, client_secret, refresh_token)
+
+
+def send_password_reset_email(recipient: str, link: str) -> str:
+    sender, client_id, client_secret, refresh_token = _gmail_credentials()
+    message = EmailMessage()
+    message["From"] = f"S&K Productions <{sender}>"
+    message["To"] = _valid_email(recipient)
+    message["Subject"] = "Reset your S&K account password"
+    message.set_content(
+        "Open this link to choose a new password for your shared S&K account:\n\n"
+        f"{link}\n\n"
+        "The link expires after 30 minutes and works once. "
+        "If you did not request a reset, ignore this message."
+    )
+    return send_gmail_message(message, client_id, client_secret, refresh_token)
+
+
+def send_gmail_message(message: EmailMessage, client_id: str, client_secret: str, refresh_token: str) -> str:
     token = _gmail_access_token(client_id, client_secret, refresh_token)
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
     try:
