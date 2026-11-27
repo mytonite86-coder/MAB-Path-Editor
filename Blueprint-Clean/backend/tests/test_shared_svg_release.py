@@ -28,8 +28,19 @@ def test_protected_current_mab_functions_and_modules_unchanged():
     # All M.A.B. activation helpers, Stripe payments, authentication and
     # unrelated Shopify functions must stay identical to deployed M.A.B.
     names -= {'deliver_shopify_order', 'shopify_order_paid', 'shopify_refund_created'}
+    # Password recovery adds exactly one JWT claim for revoking old sessions.
+    token_function = new['build_access_token_for_user']
+    [claims] = [node for node in ast.walk(token_function)
+                if isinstance(node, ast.Dict) and any(isinstance(key, ast.Constant) and key.value == 'password_version' for key in node.keys)]
+    claim_index = next(i for i, key in enumerate(claims.keys) if isinstance(key, ast.Constant) and key.value == 'password_version')
+    assert ast.unparse(claims.values.pop(claim_index)) == "user.get('password_version', 0)"
+    claims.keys.pop(claim_index)
     for name in names: assert ast.dump(new[name])==ast.dump(old[name]), name
-    for name in ['auth.py','activation_codes.py','subscription_policy.py','requirements.txt','readiness.py']:
+    old_auth = functions(deployed('auth.py'))
+    current_auth = functions(Path('auth.py').read_text())
+    for name in ['verify_password', 'get_password_hash', 'create_access_token', 'decode_token']:
+        assert ast.dump(current_auth[name]) == ast.dump(old_auth[name]), name
+    for name in ['activation_codes.py','subscription_policy.py','requirements.txt','readiness.py']:
         assert Path(name).read_bytes().replace(b'\r\n',b'\n')==deployed(name).encode().replace(b'\r\n',b'\n'), name
 
 def test_mab_payment_mapping_is_explicit_and_s1_only():

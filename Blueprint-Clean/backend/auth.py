@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
 
@@ -41,7 +41,17 @@ def decode_token(token: str):
         return None
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def _session_is_current(request: Request | None, payload: dict) -> bool:
+    if request is None:
+        return True
+    lookup = getattr(request.app.state, "password_version_lookup", None)
+    if lookup is None:
+        return True
+    current = await lookup(payload["sub"])
+    return current is not None and payload.get("password_version", 0) == current
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), request: Request = None):
     token = credentials.credentials
     payload = decode_token(token)
     
@@ -52,7 +62,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
     
     user_id = payload.get("sub")
-    if user_id is None:
+    if user_id is None or not await _session_is_current(request, payload):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -67,7 +77,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     
 
 
-async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)), request: Request = None):
     """Get current user but don't require authentication (for guest mode)"""
     if credentials is None:
         return None
@@ -79,7 +89,7 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
         return None
     
     user_id = payload.get("sub")
-    if user_id is None:
+    if user_id is None or not await _session_is_current(request, payload):
         return None
     
     return {
@@ -87,4 +97,4 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
     "email": payload.get("email"),
     "is_premium": payload.get("is_premium", False),
     "entitlements": payload.get("entitlements", []),
-}   
+}

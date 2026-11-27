@@ -68,6 +68,7 @@ from shopify_delivery import (
     send_shopify_fulfillment_email,
 )
 from fulfillment_router import build_fulfillment_route
+from password_reset import register_password_reset_routes
 from svg_shopify import (
     SVG_SHOPIFY_PRODUCTS,
     svg_license_key, issue_svg_license, validate_svg_code,
@@ -106,6 +107,7 @@ db = client[os.environ["DB_NAME"]]
 
 # Collections
 users_collection = db.users
+password_reset_limits = db.password_reset_limits
 
 activation_codes_collection = db.activation_codes
 shopify_order_states_collection = db.shopify_order_states
@@ -120,6 +122,16 @@ payment_transactions_collection = db.payment_transactions
 
 # Create the main app without a prefix
 app = FastAPI(title="CAD Blueprint API")
+
+
+async def password_version_lookup(user_id):
+    if not ObjectId.is_valid(user_id):
+        return None
+    account = await users_collection.find_one({"_id": ObjectId(user_id)}, {"password_version": 1})
+    return account.get("password_version", 0) if account else None
+
+
+app.state.password_version_lookup = password_version_lookup
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -734,6 +746,7 @@ def build_access_token_for_user(
             "email": user["email"],
             "is_premium": user.get("is_premium", False),
             "entitlements": get_user_entitlements(user),
+            "password_version": user.get("password_version", 0),
         }
     )
 
@@ -2225,6 +2238,7 @@ async def readiness_check():
 
 
 # Include the router in the main app
+register_password_reset_routes(api_router, lambda: (users_collection, password_reset_limits))
 app.include_router(api_router)
 
 app.add_middleware(
@@ -2245,6 +2259,12 @@ async def initialize_license_indexes():
     await ensure_activation_indexes(activation_codes_collection)
     await ensure_shopify_order_state_indexes(shopify_order_states_collection)
     await ensure_fulfillment_indexes(shopify_fulfillments_collection)
+
+
+@app.on_event("startup")
+async def initialize_password_reset_indexes():
+    await users_collection.create_index("password_reset.digest", sparse=True)
+    await password_reset_limits.create_index("expires_at", expireAfterSeconds=0)
 
 
 @app.on_event("shutdown")
